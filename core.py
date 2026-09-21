@@ -88,9 +88,9 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Request limit reached (free tier). Wait a minute and try again.",
     },
     "busy": {
-        "kk": "Gemini қазір жүктемеге ұшырап тұр. Бірнеше секундтан кейін қайта жіберіңіз.",
-        "ru": "Gemini сейчас перегружен. Отправьте вопрос снова через несколько секунд.",
-        "en": "Gemini is under heavy load right now. Try again in a few seconds.",
+        "kk": "Жасанды интеллект қазір жүктемеге ұшырап тұр. Бірнеше секундтан кейін қайта жіберіңіз.",
+        "ru": "Искусственный интеллект сейчас перегружен. Отправьте вопрос снова через несколько секунд.",
+        "en": "Artificial intelligence is under heavy load right now. Try again in a few seconds.",
     },
     # US5: "a user must be warned with a Connection error message if the AI
     # server is unreachable".
@@ -105,11 +105,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "The answer took too long. Please send your question again.",
     },
     "api_error": {
-        "kk": "Gemini-ге қосыла алмадық. .env-тегі API кілті мен модель атауын тексеріңіз "
+        "kk": "Жасанды интеллектrе қосыла алмадық. .env-тегі API кілті мен модель атауын тексеріңіз "
         "(нақты себебі терминалда жазылған).",
-        "ru": "Не удалось подключиться к Gemini. Проверьте API-ключ и название модели в .env "
+        "ru": "Не удалось подключиться к искусственному интеллекту. Проверьте API-ключ и название модели в .env "
         "(точная причина указана в терминале).",
-        "en": "Couldn't connect to Gemini. Check the API key and model name in .env "
+        "en": "Couldn't connect to artificial intelligence. Check the API key and model name in .env "
         "(the exact cause is in the terminal).",
     },
     "unexpected": {
