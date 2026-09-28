@@ -11,6 +11,7 @@ same process - useful once the project is deployed behind an HTTPS domain.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -26,12 +27,44 @@ WEBHOOK_BASE = os.getenv("TELEGRAM_WEBHOOK_URL", "").strip().rstrip("/")
 WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
 WEBHOOK_PATH = "/telegram/webhook"
 
+# Vercel sets this automatically in both the build and the function runtime.
+IS_VERCEL = bool(os.getenv("VERCEL"))
+
+# Built lazily (once per warm instance) instead of only in `lifespan`,
+# because ASGI startup/shutdown events are not reliably invoked between
+# cold starts on Vercel's Python runtime - so the webhook handler below
+# builds it itself on the first update if `lifespan` never ran.
+_telegram_app = None
+_telegram_app_lock = asyncio.Lock()
+
+
+async def _get_telegram_app():
+    global _telegram_app
+    if _telegram_app is not None:
+        return _telegram_app
+    async with _telegram_app_lock:
+        if _telegram_app is None:
+            from telegram_bot import build_application
+
+            telegram_app = build_application()
+            await telegram_app.initialize()
+            _telegram_app = telegram_app
+    return _telegram_app
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start the Telegram application alongside the website in webhook mode."""
-    telegram_app = None
-    if TELEGRAM_MODE == "webhook":
+    """On a persistent host (Railway, Render, a VPS), build the bot once at
+    startup and register the webhook URL with Telegram automatically.
+
+    Skipped on Vercel: lifespan events aren't guaranteed to run on every
+    cold start there, so registering the webhook here would be unreliable
+    (and, since a new instance may spin up per request, wasteful). On
+    Vercel, register the webhook once with `scripts/register_webhook.py`
+    after deploying - the Application itself is still built lazily, on the
+    first incoming update, by _get_telegram_app() above.
+    """
+    if TELEGRAM_MODE == "webhook" and not IS_VERCEL:
         if not WEBHOOK_BASE.startswith("https://"):
             raise RuntimeError(
                 "TELEGRAM_MODE=webhook үшін TELEGRAM_WEBHOOK_URL https:// мекенжайы болуы керек "
@@ -39,10 +72,7 @@ async def lifespan(app: FastAPI):
             )
         from telegram import Update as TelegramUpdate
 
-        from telegram_bot import build_application
-
-        telegram_app = build_application()
-        await telegram_app.initialize()
+        telegram_app = await _get_telegram_app()
         await telegram_app.start()
         await telegram_app.bot.set_webhook(
             url=f"{WEBHOOK_BASE}{WEBHOOK_PATH}",
@@ -54,13 +84,14 @@ async def lifespan(app: FastAPI):
         if not WEBHOOK_SECRET:
             print("[main] WARNING: TELEGRAM_WEBHOOK_SECRET is empty - the endpoint is unprotected.")
 
-    app.state.telegram = telegram_app
     try:
         yield
     finally:
-        if telegram_app is not None:
-            await telegram_app.stop()
-            await telegram_app.shutdown()
+        global _telegram_app
+        if _telegram_app is not None:
+            await _telegram_app.stop()
+            await _telegram_app.shutdown()
+            _telegram_app = None
 
 
 app = FastAPI(title="University AI Knowledge Hub", lifespan=lifespan)
@@ -121,14 +152,14 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ):
     """Receive updates from Telegram when TELEGRAM_MODE=webhook."""
-    telegram_app = getattr(app.state, "telegram", None)
-    if telegram_app is None:
+    if TELEGRAM_MODE != "webhook":
         raise HTTPException(status_code=404, detail="Telegram webhook is disabled")
     if WEBHOOK_SECRET and x_telegram_bot_api_secret_token != WEBHOOK_SECRET:
         raise HTTPException(status_code=403, detail="Bad secret token")
 
     from telegram import Update as TelegramUpdate
 
+    telegram_app = await _get_telegram_app()
     update = TelegramUpdate.de_json(await request.json(), telegram_app.bot)
     await telegram_app.process_update(update)
     return {"ok": True}

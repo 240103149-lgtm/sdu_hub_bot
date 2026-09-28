@@ -16,7 +16,9 @@ import asyncio
 import html
 import os
 import re
+import tempfile
 import traceback
+from pathlib import Path
 from typing import Any
 
 from telegram import (
@@ -45,7 +47,17 @@ TELEGRAM_LIMIT = 4000
 TYPING_REFRESH = 4  # seconds; Telegram's "typing…" indicator lasts about 5
 
 PORTAL_URL = os.getenv("REGISTRATION_PORTAL_URL", "").strip()
-STATE_FILE = core.BASE_DIR / "bot_state.pickle"
+
+# Vercel's filesystem is read-only except /tmp, and /tmp is wiped between
+# cold starts - so per-user language/history won't *persist* there, but at
+# least PicklePersistence won't crash trying to write next to the source
+# code (core.BASE_DIR). On a persistent host (Railway, Render, a VPS) this
+# still writes next to core.py as before, and survives restarts normally.
+STATE_FILE = (
+    Path(tempfile.gettempdir()) / "bot_state.pickle"
+    if os.getenv("VERCEL")
+    else core.BASE_DIR / "bot_state.pickle"
+)
 
 LANG_BUTTONS = [("kk", "🇰🇿 Қазақша"), ("ru", "🇷🇺 Русский"), ("en", "🇬🇧 English")]
 

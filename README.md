@@ -126,6 +126,40 @@ TELEGRAM_WEBHOOK_SECRET=кездейсоқ_ұзын_жол
 `TELEGRAM_WEBHOOK_SECRET` — Telegram әр сұраныста қайтаратын құпия жол;
 онсыз webhook-қа кез келген адам жалған хабар жібере алады.
 
+## 5.1. Vercel-ге деплой
+
+Vercel — serverless: тұрақты процесс жоқ, әр сұраныс жеке, қысқа өмір
+сүретін функцияда өңделеді. Сондықтан:
+
+- **`python bot.py` (polling) Vercel-де мүлде істемейді.** Тек
+  `TELEGRAM_MODE=webhook` арқылы жұмыс істейді.
+- **`bot_state.pickle` тұрақты сақталмайды.** Vercel-дің файл жүйесі
+  тек `/tmp`-ке жазуға рұқсат етеді, ол да cold start сайын өшіп кетеді.
+  Яғни пайдаланушының тілі/тарихы уақыт өте келе жоғалуы мүмкін — бот
+  құламайды, бірақ жады тұрақты емес. Толық шешім — сыртқы қойма (Redis,
+  Vercel KV) қолдану, ол осы жобада әлі жоқ.
+- **Webhook-ты бір рет қолмен тіркеу керек.** ASGI `lifespan` startup
+  оқиғасы Vercel-де әр cold start сайын шақырыла бермейді, сондықтан
+  автоматты тіркеуге сенбе:
+
+  ```bash
+  python scripts/register_webhook.py https://your-app.vercel.app
+  ```
+
+  Деплой URL-ы өзгерген сайын осыны қайта қос.
+
+**Қадамдар:**
+
+1. Vercel жоба баптауларында (Project → Settings → Environment Variables)
+   мыналарды қос: `GEMINI_API_KEY`, `GEMINI_MODEL`, `TELEGRAM_BOT_TOKEN`,
+   `TELEGRAM_MODE=webhook`, `TELEGRAM_WEBHOOK_URL` (өз Vercel домениің),
+   `TELEGRAM_WEBHOOK_SECRET`, қажет болса `REGISTRATION_PORTAL_URL`.
+2. Vercel-ге push жаса (`vercel.json` + `api/index.py` осы репода бар,
+   Vercel оларды автоматты таниды).
+3. Деплой аяқталғаннан кейін `python scripts/register_webhook.py
+   https://<деплой-домені>` қос.
+4. `https://<деплой-домені>/api/health` ашып, сервер тірі екенін тексер.
+
 ---
 
 ## User story-лерге сәйкестік
