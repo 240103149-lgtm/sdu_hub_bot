@@ -458,7 +458,7 @@ def _title(sem: grade.Semester, lang: str) -> str:
 def _render(
     sem: grade.Semester, index: int, total: int, lang: str, names: dict[str, str] | None = None
 ) -> str:
-    """One line per course:  CSS 217 | Software Architecture | 5 ECTS | B+"""
+    """One line per course:  📌 CSS 217 | Software Architecture | 5 ECTS | B+"""
     names = names or {}
     lines = [f"📊 <b>{_e(_title(sem, lang))}</b>  ({index + 1}/{total})", ""]
     for course in sem.courses:
@@ -468,7 +468,7 @@ def _render(
             parts.append(f"{_e(course.ects)} ECTS")
         if mark:
             parts.append(f"<b>{_e(mark)}</b>")
-        lines.append(" | ".join(parts))
+        lines.append("📌 " + " | ".join(parts))
 
     totals = [
         f"ECTS {sem.ects}" if sem.ects else "",
