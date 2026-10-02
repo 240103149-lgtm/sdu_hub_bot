@@ -430,7 +430,8 @@ def build_application() -> Application:
         .post_init(_post_init)
         .build()
     )
-
+    from grade_bot import register_grade
+    register_grade(app)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("lang", cmd_lang))
