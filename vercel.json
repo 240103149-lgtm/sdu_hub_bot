@@ -4,7 +4,7 @@
       "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
-        "includeFiles": ["core.py", "main.py", "telegram_bot.py", "static/**", "knowledge/**"]
+        "includeFiles": ["core.py", "main.py", "telegram_bot.py", "deadline_bot.py", "moodle.py", "grade_bot.py", "grade.py", "static/**", "knowledge/**"]
       }
     }
   ],

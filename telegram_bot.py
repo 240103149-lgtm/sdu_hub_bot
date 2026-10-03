@@ -432,6 +432,8 @@ def build_application() -> Application:
     )
     from grade_bot import register_grade
     register_grade(app)
+    from deadline_bot import register_deadline  # /deadline: Moodle link
+    register_deadline(app)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("lang", cmd_lang))
