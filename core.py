@@ -10,6 +10,9 @@ Nothing in this module knows about HTTP or about Telegram.
 """
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import asyncio
 import os
 import time
