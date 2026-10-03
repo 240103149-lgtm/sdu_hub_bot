@@ -10,14 +10,13 @@ Nothing in this module knows about HTTP or about Telegram.
 """
 from __future__ import annotations
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
 import asyncio
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+from zoneinfo import ZoneInfo
 
 from docx import Document
 from docx.table import Table
@@ -108,7 +107,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "The answer took too long. Please send your question again.",
     },
     "api_error": {
-        "kk": "Жасанды интеллектrе қосыла алмадық. .env-тегі API кілті мен модель атауын тексеріңіз "
+        "kk": "Жасанды интеллектке қосыла алмадық. .env-тегі API кілті мен модель атауын тексеріңіз "
         "(нақты себебі терминалда жазылған).",
         "ru": "Не удалось подключиться к искусственному интеллекту. Проверьте API-ключ и название модели в .env "
         "(точная причина указана в терминале).",
@@ -164,6 +163,9 @@ class AssistantError(Exception):
 SYSTEM_PROMPT = """You are the University Knowledge Hub assistant for students.
 
 Rules:
+- Today's date is {today}. When a student asks about events, compare the event date
+  with today's date: if the event is earlier than today, say clearly that it has
+  already passed; if it is today or later, say it is upcoming.
 - Answer ONLY using the knowledge base below. Do not guess dates, deadlines,
   prerequisites or any other facts that are not written there.
 - The documents may be written in Russian, Kazakh or English. Understand them in
@@ -365,7 +367,11 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
             contents.append(types.Content(role=role, parts=[types.Part(text=turn_text)]))
     contents.append(types.Content(role="user", parts=[types.Part(text=text)]))
 
-    system_prompt = SYSTEM_PROMPT.format(ui_language=LANGS[lang], knowledge=load_knowledge())
+    # Today's date (Almaty time) so the model can tell passed events from upcoming ones.
+    today = datetime.now(ZoneInfo("Asia/Almaty")).strftime("%A, %d %B %Y")
+    system_prompt = SYSTEM_PROMPT.format(
+        ui_language=LANGS[lang], knowledge=load_knowledge(), today=today
+    )
 
     started = time.monotonic()
     try:
