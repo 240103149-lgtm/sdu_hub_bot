@@ -142,6 +142,35 @@ def msg(key: str, lang: str) -> str:
     return MESSAGES[key].get(normalize_lang(lang), MESSAGES[key][DEFAULT_LANG])
 
 
+KAZAKH_LETTERS = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
+KAZAKH_WORDS = (
+    "қашан", "қайда", "қалай", "қандай", "қанша", "кашан", "кайда", "калай",
+    "бар ма", "болады", "болды", "ма?", "ме?", "сәлем", "рахмет", "туралы",
+)
+
+
+def detect_lang(text: str, default: str = DEFAULT_LANG) -> str:
+    """Language of the student's question: 'kk', 'ru' or 'en'.
+
+    Decided in code (not by the model) so the answer always follows the
+    language the question was written in. `default` (the interface language)
+    is used only when the text has no letters to judge by.
+    """
+    sample = text or ""
+    lowered = sample.lower()
+    cyr = sum(1 for ch in sample if "а" <= ch.lower() <= "я" or ch.lower() == "ё" or ch in KAZAKH_LETTERS)
+    lat = sum(1 for ch in sample if "a" <= ch.lower() <= "z")
+    if any(ch in KAZAKH_LETTERS for ch in sample) or (
+        cyr and any(word in lowered for word in KAZAKH_WORDS)
+    ):
+        return "kk"
+    if cyr >= 3 and cyr * 2 >= lat:
+        return "ru"
+    if lat >= 2:
+        return "en"
+    return normalize_lang(default)
+
+
 class AssistantError(Exception):
     """A failure we can explain to the student in their own language.
 
@@ -170,13 +199,10 @@ Rules:
   prerequisites or any other facts that are not written there.
 - The documents may be written in Russian, Kazakh or English. Understand them in
   any of these languages and translate the relevant facts into the answer language.
-- LANGUAGE RULE (STRICT, HIGHEST PRIORITY): Write the entire answer in the
-  same language as the student's latest question (Kazakh, Russian or English),
-  including fallback answers like "I don't have this information". Kazakh is
-  often typed in Cyrillic: words such as "қашан", "қайда", "қалай", "бар ма",
-  "болады" mean the question is Kazakh, so answer in Kazakh, not Russian. Only
-  if the language of the question truly cannot be determined (for example a
-  single name or number), use the student's interface language "{ui_language}".
+- LANGUAGE RULE (STRICT, HIGHEST PRIORITY): The student's question is written in
+  "{ui_language}". Write the ENTIRE answer in "{ui_language}", including fallback
+  answers like "I don't have this information". Ignore the language of the
+  knowledge base documents and of earlier messages in the conversation.
 - FOCUS RULE: Answer only what the student asked, in 1-3 short sentences. Do not
   add other events, background details, tips, or suggestions to check Instagram
   unless the student asked for them. Do not mention today's date unless it is
@@ -379,8 +405,9 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
 
     # Today's date (Almaty time) so the model can tell passed events from upcoming ones.
     today = datetime.now(ZoneInfo("Asia/Almaty")).strftime("%A, %d %B %Y")
+    reply_lang = detect_lang(text, lang)  # the language the question is written in
     system_prompt = SYSTEM_PROMPT.format(
-        ui_language=LANGS[lang], knowledge=load_knowledge(), today=today
+        ui_language=LANGS[reply_lang], knowledge=load_knowledge(), today=today
     )
 
     started = time.monotonic()
@@ -398,7 +425,7 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
     flag = "  <-- slower than the US5 target" if elapsed > SLOW_RESPONSE else ""
     print(f"[core] answered in {elapsed:.1f}s (target {SLOW_RESPONSE:.0f}s){flag}")
 
-    return (response.text or "").strip() or msg("no_answer", lang)
+    return (response.text or "").strip() or msg("no_answer", reply_lang)
 
 
 async def answer_async(
