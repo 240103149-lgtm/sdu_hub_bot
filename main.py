@@ -36,6 +36,7 @@ IS_VERCEL = bool(os.getenv("VERCEL"))
 # builds it itself on the first update if `lifespan` never ran.
 _telegram_app = None
 _telegram_app_lock = asyncio.Lock()
+_telegram_update_lock = asyncio.Lock()
 
 
 async def _get_telegram_app():
@@ -48,6 +49,8 @@ async def _get_telegram_app():
 
             telegram_app = build_application()
             await telegram_app.initialize()
+            if telegram_app.post_init:
+                await telegram_app.post_init(telegram_app)
             _telegram_app = telegram_app
     return _telegram_app
 
@@ -89,7 +92,8 @@ async def lifespan(app: FastAPI):
     finally:
         global _telegram_app
         if _telegram_app is not None:
-            await _telegram_app.stop()
+            if _telegram_app.running:
+                await _telegram_app.stop()
             await _telegram_app.shutdown()
             _telegram_app = None
 
@@ -161,7 +165,9 @@ async def telegram_webhook(
 
     telegram_app = await _get_telegram_app()
     update = TelegramUpdate.de_json(await request.json(), telegram_app.bot)
-    await telegram_app.process_update(update)
+    # ConversationHandler requires sequential updates, including webhook requests.
+    async with _telegram_update_lock:
+        await telegram_app.process_update(update)
     return {"ok": True}
 
 

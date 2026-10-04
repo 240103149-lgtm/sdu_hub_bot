@@ -126,6 +126,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "ru": "Не удалось подготовить ответ. Попробуйте переформулировать вопрос.",
         "en": "I couldn't produce an answer. Try rephrasing your question.",
     },
+    "schedule_missing": {
+        "kk": "Сабақ кестесі жүктелмеді. Бос кабинеттерді кейінірек тексеріңіз.",
+        "ru": "Расписание не загружено. Попробуйте проверить аудитории позже.",
+        "en": "The class schedule is unavailable. Please try again later.",
+    },
     "guide_missing": {
         "kk": "Нұсқаулық әлі жарияланбаған. Тіркеу бөлімімен (Registrar's office) хабарласыңыз.",
         "ru": "Инструкция пока не опубликована. Обратитесь в отдел регистрации (Registrar's office).",

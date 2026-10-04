@@ -4,11 +4,29 @@
       "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
-        "includeFiles": ["core.py", "main.py", "telegram_bot.py", "static/**", "knowledge/**"]
+        "includeFiles": [
+          "core.py",
+          "main.py",
+          "telegram_bot.py",
+          "accounts_bot.py",
+          "grade.py",
+          "grade_bot.py",
+          "deadline_bot.py",
+          "moodle.py",
+          "rooms.py",
+          "rooms_bot.py",
+          "events_bot.py",
+          "data/**",
+          "static/**",
+          "knowledge/**"
+        ]
       }
     }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "api/index.py" }
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
   ]
 }

@@ -16,8 +16,8 @@ What is kept: the student number and the portal *session cookies*, in the
 student's own user_data. The password is never stored; the 2FA code is used
 once. /unlink removes everything.
 
-This module is wired into the existing bot by two lines in
-telegram_bot.build_application (see register_grade below).
+Sign-in routing is owned by accounts_bot.register_accounts.
+register_grade adds the menu, transcript navigation and unlink command.
 """
 from __future__ import annotations
 
@@ -584,19 +584,5 @@ def register_grade(app: Application) -> None:
         if "/grade" not in help_text:
             BOT[lang]["help"] = help_text.replace("/lang", f"{HELP_LINE[lang]}\n/lang", 1)
 
-    only_text = filters.TEXT & ~filters.COMMAND
-    app.add_handler(
-        ConversationHandler(
-            entry_points=[CommandHandler("grade", cmd_grade)],
-            states={
-                CHOOSE: [CallbackQueryHandler(on_choice, pattern=r"^grade:(register|cancel)$")],
-                ASK_ID: [MessageHandler(only_text, on_student_id)],
-                ASK_PASSWORD: [MessageHandler(only_text, on_password)],
-                ASK_CODE: [MessageHandler(only_text, on_code)],
-            },
-            fallbacks=[CommandHandler("cancel", cmd_cancel)],
-            allow_reentry=True,
-        )
-    )
     app.add_handler(CallbackQueryHandler(on_grade_nav, pattern=r"^gr:(now|\d+)$"))
     app.add_handler(CommandHandler("unlink", cmd_unlink))

@@ -161,6 +161,17 @@ def text(key: str, lang: str) -> str:
     return BOT[core.normalize_lang(lang)][key]
 
 
+def add_command(name: str, menu: dict[str, str], help_line: dict[str, str]) -> None:
+    """Register a feature in all languages without duplicating menu entries."""
+    for lang in core.LANGS:
+        labels = COMMAND_LABELS[lang]
+        if not any(existing == name for existing, _ in labels):
+            position = next((i for i, (n, _) in enumerate(labels) if n == "lang"), len(labels))
+            labels.insert(position, (name, menu[lang]))
+        if f"/{name} " not in BOT[lang]["help"]:
+            BOT[lang]["help"] = BOT[lang]["help"].replace("/lang", f"{help_line[lang]}\n/lang", 1)
+
+
 # --------------------------------------------------------- text helpers ----
 
 
@@ -426,12 +437,18 @@ def build_application() -> Application:
     app = (
         ApplicationBuilder()
         .token(token)
+        .concurrent_updates(False)
         .persistence(PicklePersistence(filepath=str(STATE_FILE)))
         .post_init(_post_init)
         .build()
     )
-    from grade_bot import register_grade
-    register_grade(app)
+    from accounts_bot import register_accounts
+    from events_bot import register_events
+    from rooms_bot import register_rooms
+
+    register_accounts(app)
+    register_events(app)
+    register_rooms(app)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("lang", cmd_lang))
