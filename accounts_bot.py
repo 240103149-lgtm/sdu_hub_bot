@@ -80,7 +80,20 @@ async def private_only(update, context):
         "ru": "Чтобы связать аккаунт, напишите боту в личный чат.",
         "en": "Please link your account in a private chat with the bot.",
     }
-    await update.message.reply_text(texts[bot.user_lang(update, context)])
+    await update.effective_message.reply_text(texts[bot.user_lang(update, context)])
+
+
+def menu_entry(feature, callback):
+    """Enter the shared sign-in conversation from a main-menu button."""
+    begin = entry(feature, callback)
+
+    async def run(update, context):
+        await update.callback_query.answer()
+        if update.effective_chat.type != "private":
+            await private_only(update, context)
+            return ConversationHandler.END
+        return await begin(update, context)
+    return run
 
 
 def register_accounts(app):
@@ -97,6 +110,8 @@ def register_accounts(app):
     }
     app.add_handler(ConversationHandler(
         entry_points=[
+            CallbackQueryHandler(menu_entry("grade", grade.cmd_grade), pattern=r"^menu:grade$"),
+            CallbackQueryHandler(menu_entry("deadline", deadline.cmd_deadline), pattern=r"^menu:deadline$"),
             CommandHandler("grade", entry("grade", grade.cmd_grade), filters=private),
             CommandHandler(["deadline", "deadlines"], entry("deadline", deadline.cmd_deadline), filters=private),
         ],
@@ -109,7 +124,11 @@ def register_accounts(app):
             deadline.ASK_USER: [MessageHandler(only_text, step(deadline.on_username))],
             deadline.ASK_PASS: [MessageHandler(only_text, step(deadline.on_password))],
         },
-        fallbacks=[CommandHandler("cancel", cancel)] + [
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CallbackQueryHandler(leave(bot.on_menu), pattern=bot.MENU_PATTERN),
+            CallbackQueryHandler(leave(bot.on_lang_chosen), pattern=r"^lang:"),
+        ] + [
             CommandHandler(name, leave(callback)) for name, callback in commands.items()
         ] + [MessageHandler(filters.COMMAND, cancel)],
         allow_reentry=True,

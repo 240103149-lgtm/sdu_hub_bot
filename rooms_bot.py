@@ -178,14 +178,14 @@ async def cmd_rooms(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         body, markup = rooms_message(view, lang)
     except rooms.ScheduleError as exc:
         print(f"[rooms] schedule: {exc}")
-        await update.message.reply_text(core.msg("schedule_missing", lang))
+        await update.effective_message.reply_text(core.msg("schedule_missing", lang))
         return
     except ValueError:  # not a time, or after the last class period
         slots = rooms.load_schedule().slots
         hint = t("bad_time", lang).format(first=rooms.hhmm(slots[0].start), last=rooms.hhmm(slots[-1].end))
-        await update.message.reply_text(hint)
+        await update.effective_message.reply_text(hint)
         return
-    await update.message.reply_text(body, parse_mode=ParseMode.HTML, reply_markup=markup)
+    await update.effective_message.reply_text(body, parse_mode=ParseMode.HTML, reply_markup=markup)
 
 
 async def on_rooms_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

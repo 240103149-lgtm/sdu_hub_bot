@@ -59,9 +59,9 @@ async def cmd_events(update, context):
     try:
         source = EVENTS_FILE.read_text(encoding="utf-8")
     except OSError:
-        await reply(update.message, TEXTS[lang]["missing"])
+        await reply(update.effective_message, TEXTS[lang]["missing"])
         return
-    await reply(update.message, render_events(source, lang))
+    await reply(update.effective_message, render_events(source, lang))
 
 
 def register_events(app):
