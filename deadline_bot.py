@@ -335,7 +335,7 @@ async def cmd_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             ]
         ]
     )
-    await update.message.reply_text(t("need_link", lang), reply_markup=keyboard)
+    await update.effective_message.reply_text(t("need_link", lang), reply_markup=keyboard)
     return CHOOSE
 
 
@@ -358,11 +358,11 @@ async def on_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     lang = user_lang(update, context)
     value = (update.message.text or "").strip()
     if not value or len(value) > 64 or any(ch.isspace() for ch in value):
-        await update.message.reply_text(t("invalid_user", lang))
+        await update.effective_message.reply_text(t("invalid_user", lang))
         return ASK_USER
 
     context.user_data["deadline_user"] = value
-    await update.message.reply_text(t("ask_pass", lang))
+    await update.effective_message.reply_text(t("ask_pass", lang))
     return ASK_PASS
 
 
@@ -405,7 +405,7 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     lang = user_lang(update, context)
     _close_flow(update.effective_user.id, context)
-    await update.message.reply_text(t("cancelled", lang))
+    await update.effective_message.reply_text(t("cancelled", lang))
     return ConversationHandler.END
 
 
@@ -413,9 +413,9 @@ async def cmd_unlink_moodle(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     lang = user_lang(update, context)
     _close_flow(update.effective_user.id, context)
     if context.user_data.pop("moodle", None) is None:
-        await update.message.reply_text(t("not_linked", lang))
+        await update.effective_message.reply_text(t("not_linked", lang))
         return
-    await update.message.reply_text(t("unlinked", lang))
+    await update.effective_message.reply_text(t("unlinked", lang))
 
 
 # ----------------------------------------------------------- registration ----

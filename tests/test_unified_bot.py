@@ -155,6 +155,88 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
             payload = {'update_id': self.counter, 'callback_query': {'id': str(self.counter), 'from': user, 'chat_instance': 'test', 'data': callback, 'message': message}}
         await self.app.process_update(Update.de_json(payload, self.app.bot))
 
+    async def test_start_has_localized_overview_and_six_buttons(self):
+        for lang, heading in [('kk', '📚 Оқу'), ('ru', '📚 Учёба'), ('en', '📚 Study')]:
+            self.app.user_data[42]['lang'] = lang
+            await self.update('/start')
+            sent = self.send.call_args.kwargs
+            self.assertIn('SDU Hub', sent['text'])
+            self.assertIn(heading, sent['text'])
+            self.assertIn('/deadline', sent['text'])
+            self.assertNotIn('/unlink', sent['text'])
+            keyboard = sent['reply_markup'].inline_keyboard
+            self.assertEqual([len(row) for row in keyboard], [2, 2, 2])
+            self.assertEqual([b.callback_data for row in keyboard for b in row],
+                             ['menu:deadline', 'menu:grade', 'menu:events', 'menu:rooms', 'menu:guide', 'menu:lang'])
+        self.ai.assert_not_awaited()
+
+    async def test_menu_events_rooms_and_guide_work_without_commands(self):
+        await self.update(callback='menu:events')
+        self.assertTrue(any('Welcome Party' in c.kwargs['text'] for c in self.send.call_args_list))
+        await self.update(callback='menu:rooms')
+        self.assertIn('Бос кабинеттер', self.send.call_args.kwargs['text'])
+        with patch.object(telegram_bot.core, 'load_guide', return_value='Approved registration guide'):
+            await self.update(callback='menu:guide')
+        self.assertIn('Approved registration guide', self.send.call_args.kwargs['text'])
+        self.ai.assert_not_awaited()
+
+    async def test_menu_account_buttons_start_and_switch_login(self):
+        await self.update(callback='menu:grade')
+        self.assertEqual(self.app.user_data[42]['login_flow'], 'grade')
+        await self.update(callback='grade:register')
+        await self.update('student-id')
+        await self.update(callback='menu:deadline')
+        self.assertNotIn('grade_sid', self.app.user_data[42])
+        self.assertEqual(self.app.user_data[42]['login_flow'], 'deadline')
+        await self.update(callback='deadline:register')
+        await self.update('moodle-student')
+        with patch.object(moodle, 'login', new=AsyncMock(return_value={'mode': 'token', 'token': 'test'})) as login, patch.object(moodle, 'fetch_deadlines', new=AsyncMock(return_value=[])):
+            await self.update('secret-password')
+        login.assert_awaited_once_with('moodle-student', 'secret-password')
+        self.assertNotIn('login_flow', self.app.user_data[42])
+        self.ai.assert_not_awaited()
+
+    async def test_linked_account_buttons_show_existing_data(self):
+        self.app.user_data[42]['moodle'] = {'mode': 'token', 'token': 'test'}
+        with patch.object(moodle, 'fetch_deadlines', new=AsyncMock(return_value=[])) as fetch:
+            await self.update(callback='menu:deadline')
+        fetch.assert_awaited_once()
+        self.app.user_data[42]['portal'] = {'cookies': {}}
+        with patch.object(grade_bot.grade, 'fetch_transcript', new=AsyncMock(return_value=[])) as fetch:
+            await self.update(callback='menu:grade')
+        fetch.assert_awaited_once()
+        self.assertNotIn('login_flow', self.app.user_data[42])
+        self.ai.assert_not_awaited()
+
+    async def test_menu_navigation_exits_login_and_refreshes_language(self):
+        await self.update(callback='menu:deadline')
+        await self.update(callback='deadline:register')
+        await self.update(callback='menu:events')
+        self.assertNotIn('login_flow', self.app.user_data[42])
+        await self.update('ordinary question')
+        self.ai.assert_awaited_once()
+        await self.update(callback='menu:lang')
+        keyboard = self.send.call_args.kwargs['reply_markup'].inline_keyboard
+        self.assertEqual([b.callback_data for b in keyboard[0]], ['lang:kk', 'lang:ru', 'lang:en'])
+        await self.update(callback='menu:grade')
+        await self.update(callback='lang:ru')
+        self.assertNotIn('login_flow', self.app.user_data[42])
+        self.assertEqual(self.app.user_data[42]['lang'], 'ru')
+        self.assertIn('📚 Учёба', self.send.call_args.kwargs['text'])
+        self.assertEqual(self.send.call_args.kwargs['reply_markup'].inline_keyboard[0][0].text, '📅 Дедлайны')
+
+    async def test_help_groups_account_controls_and_group_buttons_are_safe(self):
+        await self.update('/help')
+        body = self.send.call_args.kwargs['text']
+        self.assertIn('Әңгіме және аккаунттар', body)
+        for name in ['reset', 'cancel', 'unlink', 'unlink_moodle']:
+            self.assertIn('/' + name + ' —', body)
+        for action in ['grade', 'deadline']:
+            await self.update(callback='menu:' + action, user_id=-100, chat_type='group')
+            self.assertNotIn('login_flow', self.app.user_data[-100])
+            self.assertIn('жеке чатына', self.send.call_args.kwargs['text'])
+        self.ai.assert_not_awaited()
+
     async def test_switch_login_keeps_password_in_moodle_flow(self):
         await self.update('/grade')
         await self.update(callback='grade:register')

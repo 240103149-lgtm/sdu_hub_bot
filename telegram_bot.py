@@ -66,19 +66,54 @@ LANG_BUTTONS = [("kk", "🇰🇿 Қазақша"), ("ru", "🇷🇺 Русски
 BOT: dict[str, dict[str, str]] = {
     "kk": {
         "start": (
-            "Сәлем, {name}! 👋\n\n"
-            "Мен — университеттің AI көмекшісімін. Оқу процесі туралы сұрағыңызды "
-            "жай ғана мәтінмен жазыңыз — жауапты университеттің бекітілген "
-            "құжаттарынан ғана іздеймін.\n\n"
-            "Мысалы: «Расписание қалай құрамын?»"
+            'Сәлем, {name}! 👋\n'
+            '\n'
+            'Мен — **SDU Hub**, студенттік өмірдегі көмекшіңмін. Дедлайндарды тексеруге, бос кабинет табуға және кампустағы ивенттерден хабардар болуға көмектесемін.\n'
+            '\n'
+            '**📚 Оқу**\n'
+            '/deadline — Moodle тапсырмаларының дедлайндары\n'
+            '/grade — бағаларыңды көру\n'
+            '/guide — сабақ кестесін құру нұсқаулығы\n'
+            '\n'
+            '**🏫 Кампус**\n'
+            '/events — университеттегі ивенттер\n'
+            '/rooms — бос кабинеттер\n'
+            'Керек уақытты да көрсетуге болады: /rooms 14:30\n'
+            '\n'
+            '**⚙️ Баптаулар**\n'
+            '/lang — Қазақша / Русский / English\n'
+            '/help — барлық командалар мен көмек\n'
+            '\n'
+            '💬 Сұрағың бар ма? Жай ғана жаз:\n'
+            '«Расписание қалай құрамын?»\n'
+            '\n'
+            'Бастау үшін төмендегі батырмалардың бірін таңда 👇'
         ),
         "help": (
-            "<b>Командалар</b>\n"
-            "/guide — расписание құру нұсқаулығы\n"
-            "/lang — тілді ауыстыру\n"
-            "/reset — әңгіме тарихын тазарту\n"
-            "/help — осы анықтама\n\n"
-            "Сұрағыңызды жай ғана жазып жіберсеңіз болды."
+            '**SDU Hub · Көмек**\n'
+            '\n'
+            '**📚 Оқу**\n'
+            '/deadline — Moodle тапсырмаларының дедлайндары\n'
+            '/grade — бағаларыңды көру\n'
+            '/guide — сабақ кестесін құру нұсқаулығы\n'
+            '\n'
+            '**🏫 Кампус**\n'
+            '/events — университеттегі ивенттер\n'
+            '/rooms — бос кабинеттер\n'
+            'Керек уақытты да көрсетуге болады: /rooms 14:30\n'
+            '\n'
+            '**⚙️ Баптаулар**\n'
+            '/lang — Қазақша / Русский / English\n'
+            '/help — барлық командалар мен көмек\n'
+            '\n'
+            '**💬 Әңгіме және аккаунттар**\n'
+            '/start — негізгі мәзірге оралу\n'
+            '/reset — AI әңгімесінің тарихын тазарту\n'
+            '/cancel — аккаунтқа кіруді тоқтату\n'
+            '/unlink — университет порталының байланысын өшіру\n'
+            '/unlink_moodle — Moodle байланысын өшіру\n'
+            '\n'
+            'Бағалар мен дедлайндарды алғаш ашқанда жеке чатта аккаунтыңды байланыстыру ұсынылады.'
         ),
         "choose_lang": "Тілді таңдаңыз:",
         "lang_set": "Тіл қазақшаға ауыстырылды. Сұрағыңызды жазыңыз.",
@@ -88,19 +123,54 @@ BOT: dict[str, dict[str, str]] = {
     },
     "ru": {
         "start": (
-            "Привет, {name}! 👋\n\n"
-            "Я — AI-помощник университета. Задайте вопрос об учебном процессе "
-            "обычным текстом — я ищу ответ только в утверждённых документах "
-            "университета.\n\n"
-            "Например: «Как составить расписание?»"
+            'Привет, {name}! 👋\n'
+            '\n'
+            'Я — **SDU Hub**, твой помощник в студенческой жизни. Помогу проверить дедлайны, найти свободную аудиторию и узнать о событиях кампуса.\n'
+            '\n'
+            '**📚 Учёба**\n'
+            '/deadline — дедлайны заданий в Moodle\n'
+            '/grade — твои оценки\n'
+            '/guide — инструкция по составлению расписания\n'
+            '\n'
+            '**🏫 Кампус**\n'
+            '/events — события университета\n'
+            '/rooms — свободные аудитории\n'
+            'Можно указать время: /rooms 14:30\n'
+            '\n'
+            '**⚙️ Настройки**\n'
+            '/lang — Қазақша / Русский / English\n'
+            '/help — все команды и помощь\n'
+            '\n'
+            '💬 Есть вопрос? Просто напиши:\n'
+            '«Как составить расписание?»\n'
+            '\n'
+            'Чтобы начать, выбери кнопку ниже 👇'
         ),
         "help": (
-            "<b>Команды</b>\n"
-            "/guide — инструкция по составлению расписания\n"
-            "/lang — сменить язык\n"
-            "/reset — очистить историю диалога\n"
-            "/help — эта справка\n\n"
-            "Чтобы задать вопрос, просто напишите его."
+            '**SDU Hub · Помощь**\n'
+            '\n'
+            '**📚 Учёба**\n'
+            '/deadline — дедлайны заданий в Moodle\n'
+            '/grade — твои оценки\n'
+            '/guide — инструкция по составлению расписания\n'
+            '\n'
+            '**🏫 Кампус**\n'
+            '/events — события университета\n'
+            '/rooms — свободные аудитории\n'
+            'Можно указать время: /rooms 14:30\n'
+            '\n'
+            '**⚙️ Настройки**\n'
+            '/lang — Қазақша / Русский / English\n'
+            '/help — все команды и помощь\n'
+            '\n'
+            '**💬 Диалог и аккаунты**\n'
+            '/start — вернуться в главное меню\n'
+            '/reset — очистить историю диалога с AI\n'
+            '/cancel — отменить вход в аккаунт\n'
+            '/unlink — отвязать университетский портал\n'
+            '/unlink_moodle — отвязать Moodle\n'
+            '\n'
+            'При первом открытии оценок или дедлайнов бот предложит связать аккаунт в личном чате.'
         ),
         "choose_lang": "Выберите язык:",
         "lang_set": "Язык переключён на русский. Задавайте вопрос.",
@@ -110,19 +180,54 @@ BOT: dict[str, dict[str, str]] = {
     },
     "en": {
         "start": (
-            "Hi, {name}! 👋\n\n"
-            "I'm the university's AI assistant. Ask about anything in the study "
-            "process in plain text — I only look for answers in the university's "
-            "approved documents.\n\n"
-            "For example: \"How do I create my schedule?\""
+            'Hi, {name}! 👋\n'
+            '\n'
+            "I'm **SDU Hub**, your student-life assistant. I can help you check deadlines, find a free room and discover campus events.\n"
+            '\n'
+            '**📚 Study**\n'
+            '/deadline — Moodle assignment deadlines\n'
+            '/grade — your grades\n'
+            '/guide — how to create your course schedule\n'
+            '\n'
+            '**🏫 Campus**\n'
+            '/events — university events\n'
+            '/rooms — free classrooms\n'
+            'You can also choose a time: /rooms 14:30\n'
+            '\n'
+            '**⚙️ Settings**\n'
+            '/lang — Қазақша / Русский / English\n'
+            '/help — all commands and help\n'
+            '\n'
+            '💬 Have a question? Just type it:\n'
+            '“How do I create my schedule?”\n'
+            '\n'
+            'Choose a button below to get started 👇'
         ),
         "help": (
-            "<b>Commands</b>\n"
-            "/guide — course registration guide\n"
-            "/lang — change language\n"
-            "/reset — clear the conversation history\n"
-            "/help — this help\n\n"
-            "To ask a question, just type it."
+            '**SDU Hub · Help**\n'
+            '\n'
+            '**📚 Study**\n'
+            '/deadline — Moodle assignment deadlines\n'
+            '/grade — your grades\n'
+            '/guide — how to create your course schedule\n'
+            '\n'
+            '**🏫 Campus**\n'
+            '/events — university events\n'
+            '/rooms — free classrooms\n'
+            'You can also choose a time: /rooms 14:30\n'
+            '\n'
+            '**⚙️ Settings**\n'
+            '/lang — Қазақша / Русский / English\n'
+            '/help — all commands and help\n'
+            '\n'
+            '**💬 Conversation and accounts**\n'
+            '/start — return to the main menu\n'
+            '/reset — clear your AI conversation history\n'
+            '/cancel — cancel account sign-in\n'
+            '/unlink — unlink the university portal\n'
+            '/unlink_moodle — unlink Moodle\n'
+            '\n'
+            'When you first open grades or deadlines, the bot will offer to link your account in a private chat.'
         ),
         "choose_lang": "Choose a language:",
         "lang_set": "Language switched to English. Go ahead and ask.",
@@ -282,6 +387,27 @@ async def reply(message, source: str, reply_markup: Any = None) -> None:
             )
 
 
+HOME_BUTTONS = {
+    "kk": [("deadline", "📅 Дедлайндар"), ("grade", "📊 Бағалар"),
+           ("events", "🎉 Ивенттер"), ("rooms", "🚪 Бос кабинеттер"),
+           ("guide", "📚 Кесте құру"), ("lang", "🌐 Тіл")],
+    "ru": [("deadline", "📅 Дедлайны"), ("grade", "📊 Оценки"),
+           ("events", "🎉 События"), ("rooms", "🚪 Аудитории"),
+           ("guide", "📚 Расписание"), ("lang", "🌐 Язык")],
+    "en": [("deadline", "📅 Deadlines"), ("grade", "📊 Grades"),
+           ("events", "🎉 Events"), ("rooms", "🚪 Free rooms"),
+           ("guide", "📚 Schedule guide"), ("lang", "🌐 Language")],
+}
+MENU_PATTERN = r"^menu:(start|help|events|rooms|guide|lang)$"
+
+
+def home_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Six main actions, two per row. Callback data is language-independent."""
+    buttons = [InlineKeyboardButton(label, callback_data=f"menu:{action}")
+               for action, label in HOME_BUTTONS[core.normalize_lang(lang)]]
+    return InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
+
+
 def language_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(label, callback_data=f"lang:{code}") for code, label in LANG_BUTTONS]]
@@ -326,21 +452,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     name = (user.first_name if user and user.first_name else "").strip() or "студент"
     await reply(
-        update.message,
+        update.effective_message,
         text("start", lang).format(name=name),
-        reply_markup=language_keyboard(),
+        reply_markup=home_keyboard(lang),
     )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = user_lang(update, context)
-    # The help text is already HTML, so it goes out directly.
-    await update.message.reply_text(text("help", lang), parse_mode=ParseMode.HTML)
+    await reply(update.effective_message, text("help", lang), reply_markup=home_keyboard(lang))
 
 
 async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = user_lang(update, context)
-    await update.message.reply_text(text("choose_lang", lang), reply_markup=language_keyboard())
+    await update.effective_message.reply_text(text("choose_lang", lang), reply_markup=language_keyboard())
 
 
 async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -352,12 +477,13 @@ async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(text("lang_set", chosen))
     except TelegramError:
         await query.message.reply_text(text("lang_set", chosen))
+    await cmd_start(update, context)
 
 
 async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = user_lang(update, context)
     context.user_data["history"] = []
-    await update.message.reply_text(text("reset", lang))
+    await update.effective_message.reply_text(text("reset", lang))
 
 
 async def cmd_guide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -365,9 +491,26 @@ async def cmd_guide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = user_lang(update, context)
     guide = core.load_guide(lang)
     if not guide or not guide.strip():
-        await update.message.reply_text(core.msg("guide_missing", lang))
+        await update.effective_message.reply_text(core.msg("guide_missing", lang))
         return
-    await reply(update.message, guide.strip(), reply_markup=portal_keyboard(lang))
+    await reply(update.effective_message, guide.strip(), reply_markup=portal_keyboard(lang))
+
+
+async def on_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Main-menu buttons use the same feature handlers as slash commands."""
+    from events_bot import cmd_events
+    from rooms_bot import cmd_rooms
+
+    query = update.callback_query
+    await query.answer()
+    action = query.data.split(":", 1)[1]
+    handlers = {
+        "start": cmd_start, "help": cmd_help, "guide": cmd_guide,
+        "lang": cmd_lang, "events": cmd_events, "rooms": cmd_rooms,
+    }
+    # A button should open rooms for now even if an earlier command had args.
+    context.args = []
+    await handlers[action](update, context)
 
 
 async def on_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -455,6 +598,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(CommandHandler("guide", cmd_guide))
     app.add_handler(CallbackQueryHandler(on_lang_chosen, pattern=r"^lang:"))
+    app.add_handler(CallbackQueryHandler(on_menu, pattern=MENU_PATTERN))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_question))
     app.add_handler(
         MessageHandler(

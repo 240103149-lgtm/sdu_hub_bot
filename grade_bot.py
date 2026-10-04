@@ -256,7 +256,7 @@ async def cmd_grade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             ]
         ]
     )
-    await update.message.reply_text(t("need_link", lang), reply_markup=keyboard)
+    await update.effective_message.reply_text(t("need_link", lang), reply_markup=keyboard)
     return CHOOSE
 
 
@@ -277,11 +277,11 @@ async def on_student_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     lang = user_lang(update, context)
     value = (update.message.text or "").strip()
     if not value or len(value) > 32 or any(ch.isspace() for ch in value):
-        await update.message.reply_text(t("invalid_id", lang))
+        await update.effective_message.reply_text(t("invalid_id", lang))
         return ASK_ID
 
     context.user_data["grade_sid"] = value
-    await update.message.reply_text(t("ask_password", lang))
+    await update.effective_message.reply_text(t("ask_password", lang))
     return ASK_PASSWORD
 
 
@@ -371,7 +371,7 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     lang = user_lang(update, context)
     context.user_data.pop("grade_sid", None)
     await _drop_pending(update.effective_user.id)
-    await update.message.reply_text(t("cancelled", lang))
+    await update.effective_message.reply_text(t("cancelled", lang))
     return ConversationHandler.END
 
 
@@ -379,9 +379,9 @@ async def cmd_unlink(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     lang = user_lang(update, context)
     _CACHE.pop(update.effective_user.id, None)
     if context.user_data.pop("portal", None) is None:
-        await update.message.reply_text(t("not_linked", lang))
+        await update.effective_message.reply_text(t("not_linked", lang))
         return
-    await update.message.reply_text(t("unlinked", lang))
+    await update.effective_message.reply_text(t("unlinked", lang))
 
 
 # ------------------------------------------------------------- transcript ----
@@ -516,20 +516,20 @@ async def _show_grades(update: Update, context: ContextTypes.DEFAULT_TYPE, lang:
         if exc.key == "session_expired":
             context.user_data.pop("portal", None)
             _CACHE.pop(update.effective_user.id, None)
-        await update.message.reply_text(_error_text(exc, lang))
+        await update.effective_message.reply_text(_error_text(exc, lang))
         return
     except Exception as exc:  # noqa: BLE001
         print(f"[grade] unexpected error while reading grades: {exc!r}")
-        await update.message.reply_text(core.msg("unexpected", lang))
+        await update.effective_message.reply_text(core.msg("unexpected", lang))
         return
     finally:
         typing.cancel()
 
     if page is None:
-        await update.message.reply_text(t("grades_empty", lang))
+        await update.effective_message.reply_text(t("grades_empty", lang))
         return
     text, keyboard = page
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
 async def on_grade_nav(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
