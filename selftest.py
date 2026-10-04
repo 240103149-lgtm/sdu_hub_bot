@@ -42,6 +42,8 @@ missing = []
 for module, package in [
     ("dotenv", "python-dotenv"),
     ("google.genai", "google-genai"),
+    ("httpx", "httpx"),
+    ("bs4", "beautifulsoup4"),
     ("telegram", "python-telegram-bot"),
     ("fastapi", "fastapi"),
     ("docx", "python-docx"),
@@ -67,14 +69,17 @@ load_dotenv()
 section("2. .env файлы")
 env_path = Path(__file__).parent / ".env"
 report(env_path.exists(), ".env файлы бар", "" if env_path.exists() else "істеу керек: cp env.example .env")
-report(bool(os.getenv("GEMINI_API_KEY")), "GEMINI_API_KEY толтырылған")
-report(bool(os.getenv("GEMINI_MODEL")), "GEMINI_MODEL толтырылған",
-       f"модель: {os.getenv('GEMINI_MODEL')}" if os.getenv("GEMINI_MODEL") else "")
+
+import ai  # noqa: E402
+
+missing_ai = ai.missing_settings()
+report(not missing_ai, f"AI_PROVIDER бапталған: {', '.join(ai.provider_names())}",
+       "жетіспейді: " + "; ".join(missing_ai) if missing_ai else "")
 report(bool(os.getenv("TELEGRAM_BOT_TOKEN")), "TELEGRAM_BOT_TOKEN толтырылған",
        "" if os.getenv("TELEGRAM_BOT_TOKEN") else "@BotFather → /newbot")
 
-if not (os.getenv("GEMINI_API_KEY") and os.getenv("GEMINI_MODEL")):
-    print("\nGemini кілтінсіз әрі қарай тексере алмаймыз.")
+if missing_ai:
+    print("\nAI кілтінсіз әрі қарай тексере алмаймыз.")
     sys.exit(1)
 
 import core  # noqa: E402
@@ -116,23 +121,24 @@ if portal:
 else:
     note("портал сілтемесі жоқ", "REGISTRATION_PORTAL_URL бос (міндетті емес)")
 
-# 5. ---------------------------------------------------------- Gemini (US5) --
-section("5. Gemini жауабы (US5: 5 секунд)")
+# 5. -------------------------------------------------------------- AI (US5) --
+section("5. AI жауабы (US5: 5 секунд)")
+note("модельдер, кезекпен: " + " → ".join(ai.describe()))
 question = "Тест: бір қысқа сөйлеммен жауап бер."
 started = time.monotonic()
 try:
     answer = core.answer(question, [], "kk")
     elapsed = time.monotonic() - started
-    report(True, f"Gemini жауап берді ({elapsed:.1f}s)", answer[:200])
+    report(True, f"AI жауап берді ({elapsed:.1f}s)", answer[:200])
     report(
         elapsed <= core.SLOW_RESPONSE,
         f"5 секунд шегіне сыйды ({elapsed:.1f}s ≤ {core.SLOW_RESPONSE:.0f}s)",
         "" if elapsed <= core.SLOW_RESPONSE else "жылдамырақ модель немесе кішірек knowledge/ көмектеседі",
     )
 except core.AssistantError as exc:
-    report(False, "Gemini жауап берді", f"{exc.key}: {exc.localized('kk')}")
+    report(False, "AI жауап берді", f"{exc.key}: {exc.localized('kk')}")
 except Exception as exc:  # noqa: BLE001
-    report(False, "Gemini жауап берді", repr(exc))
+    report(False, "AI жауап берді", repr(exc))
 
 # 6. --------------------------------------------------------------- Telegram --
 section("6. Telegram боты")
@@ -164,6 +170,25 @@ if mode == "webhook":
            "webhook құпия сөзі қойылған", "TELEGRAM_WEBHOOK_SECRET бос — қауіпсіз емес")
 else:
     note("режим: polling", "ботты қосу:  python bot.py")
+
+# 7. ---------------------------------------------------------- free rooms --
+section("7. Бос кабинеттер (data/schedule.json)")
+import rooms  # noqa: E402
+
+try:
+    schedule = rooms.load_schedule()
+    report(
+        True,
+        f"сабақ кестесі жүктелді: {len(schedule.rooms)} кабинет, {len(schedule.slots)} сабақ уақыты",
+        "күндер: " + ", ".join(schedule.days),
+    )
+    view = rooms.current_view()
+    note(
+        f"{view.day} {rooms.hhmm(view.slot.start)}–{rooms.hhmm(view.slot.end)}: "
+        f"{len(rooms.free_rooms(view))} кабинет бос"
+    )
+except rooms.ScheduleError as exc:
+    report(False, "сабақ кестесі жүктелді", f"{exc}\nпорталдан алынған кестені data/schedule.json етіп салыңыз")
 
 # ------------------------------------------------------------------- total --
 failed = [title for passed, title in results if not passed]

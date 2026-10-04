@@ -1,12 +1,14 @@
 """Shared core of the University AI Knowledge Hub.
 
 Both entry points import from here, so the knowledge base, the prompt, the
-Gemini calls and the localized error messages live in exactly one place:
+AI calls and the localized error messages live in exactly one place:
 
     main.py          -> the website / REST API (FastAPI)
     telegram_bot.py  -> the Telegram bot (US5, US3, US6)
 
-Nothing in this module knows about HTTP or about Telegram.
+Nothing in this module knows about HTTP or about Telegram - nor about any
+particular AI company: ai.py hides whether Gemini, DeepSeek or another model
+answers (AI_PROVIDER in .env).
 """
 from __future__ import annotations
 
@@ -15,15 +17,15 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 from docx import Document
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 from dotenv import load_dotenv
-from google import genai
-from google.genai import errors, types
+
+import ai
 
 load_dotenv()
 
@@ -36,37 +38,18 @@ GUIDE_FILE = KNOWLEDGE_DIR / "registration_guide.md"  # default (Kazakh) guide
 
 # --------------------------------------------------------------- config ----
 
-API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = os.getenv("GEMINI_MODEL")
-FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL")  # optional, used if MODEL is overloaded
-
 # US5: "the chatbot must generate and show a response within 5 seconds".
 # SLOW_RESPONSE is the target we measure against (every answer is timed and
 # logged); RESPONSE_BUDGET is the hard cut-off after which we stop retrying
 # and show the student an error instead of leaving them waiting.
 SLOW_RESPONSE = float(os.getenv("SLOW_RESPONSE_SECONDS", "5"))
 RESPONSE_BUDGET = float(os.getenv("RESPONSE_BUDGET_SECONDS", "20"))
-REQUEST_TIMEOUT = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "15"))  # per HTTP call
 
 MAX_QUESTION_LENGTH = 2000
 HISTORY_TURNS = 10          # how many past messages are sent back to the model
-MAX_ATTEMPTS = 3            # attempts per model before giving up
-RETRY_PAUSE = 1.5           # seconds; grows with each attempt
-RETRYABLE = {429, 500, 502, 503, 504}
 
-if not API_KEY or not MODEL:
-    raise RuntimeError(
-        ".env файлында GEMINI_API_KEY және GEMINI_MODEL болуы керек "
-        "(.env файлы core.py-мен бір папкада тұруы тиіс). Үлгі: env.example"
-    )
-
-try:
-    client = genai.Client(
-        api_key=API_KEY,
-        http_options=types.HttpOptions(timeout=int(REQUEST_TIMEOUT * 1000)),
-    )
-except Exception:  # noqa: BLE001 - older google-genai builds ignore http_options
-    client = genai.Client(api_key=API_KEY)
+# Fail at startup, with a clear message, if .env lacks the chosen provider's key.
+ai.chain()
 
 # ---------------------------------------------------------- localization ----
 
@@ -128,6 +111,14 @@ MESSAGES: dict[str, dict[str, str]] = {
         "kk": "Нұсқаулық әлі жарияланбаған. Тіркеу бөлімімен (Registrar's office) хабарласыңыз.",
         "ru": "Инструкция пока не опубликована. Обратитесь в отдел регистрации (Registrar's office).",
         "en": "The guide has not been published yet. Please contact the Registrar's office.",
+    },
+    "schedule_missing": {
+        "kk": "Сабақ кестесі жүктелмеді, сондықтан бос кабинеттерді көрсете алмаймын "
+        "(нақты себебі терминалда жазылған).",
+        "ru": "Расписание занятий не загружено, поэтому не могу показать свободные аудитории "
+        "(точная причина указана в терминале).",
+        "en": "The class schedule isn't loaded, so I can't show free rooms "
+        "(the exact cause is in the terminal).",
     },
 }
 
@@ -217,6 +208,10 @@ Rules:
   (creating) the schedule - in Kazakh "расписание құру" or "сабақ кестесін құру",
   in Russian "составление расписания". Treat these phrases as the same thing and use
   the wording the student used. The menu item in the student portal is named "Course Registration".
+- Free (empty) classrooms are not in the knowledge base: a separate feature works
+  them out from the class schedule. If the student asks which rooms are free, do
+  not guess - point them to the /rooms command in the Telegram bot or the
+  "Free rooms" tab on the website (Kazakh: "Бос кабинеттер", Russian: "Свободные аудитории").
 - If the answer is not in the knowledge base, say so clearly and suggest
   contacting the relevant university office (for example, the Registrar's office).
 - Be concise. For procedures, give short numbered steps. Use plain text;
@@ -309,69 +304,6 @@ def load_guide(lang: str) -> str | None:
     return None
 
 
-# --------------------------------------------------------------- Gemini ----
-
-
-def _is_transport_error(exc: BaseException) -> bool:
-    """True for 'the server is unreachable' style failures (DNS, TLS, timeout)."""
-    name = type(exc).__name__.lower()
-    return any(word in name for word in ("timeout", "connect", "network", "ssl", "protocol"))
-
-
-def _error_key(exc: BaseException) -> str:
-    if isinstance(exc, errors.APIError):
-        if exc.code == 429:
-            return "rate_limit"
-        if exc.code in RETRYABLE:
-            return "busy"
-        return "api_error"
-    if _is_transport_error(exc):
-        return "connection"
-    return "unexpected"
-
-
-def ask_gemini(contents: Sequence[Any], system_prompt: str, deadline: float | None = None):
-    """Ask the main model; retry temporary errors, then try the fallback model.
-
-    `deadline` is a time.monotonic() value: once it passes we stop retrying so
-    the student is never left waiting past the response budget.
-    """
-    models = [MODEL] + ([FALLBACK_MODEL] if FALLBACK_MODEL else [])
-    last_exc: BaseException | None = None
-
-    for model in models:
-        for attempt in range(MAX_ATTEMPTS):
-            if deadline is not None and time.monotonic() >= deadline:
-                raise AssistantError(_error_key(last_exc) if last_exc else "timeout")
-            try:
-                return client.models.generate_content(
-                    model=model,
-                    contents=list(contents),
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_prompt,
-                        temperature=0.2,
-                    ),
-                )
-            except Exception as exc:  # noqa: BLE001 - classified just below
-                last_exc = exc
-                retryable = (
-                    isinstance(exc, errors.APIError) and exc.code in RETRYABLE
-                ) or _is_transport_error(exc)
-                print(f"[core] Gemini error ({model}, attempt {attempt + 1}): {exc}")
-                if not retryable:
-                    raise
-                pause = RETRY_PAUSE * (attempt + 1)
-                if attempt + 1 >= MAX_ATTEMPTS:
-                    break
-                if deadline is not None and time.monotonic() + pause >= deadline:
-                    break
-                time.sleep(pause)
-
-    if last_exc is not None:
-        raise last_exc
-    raise AssistantError("timeout")
-
-
 # ---------------------------------------------------------------- answer ----
 
 
@@ -381,7 +313,7 @@ def _as_turn(turn: Any) -> tuple[str, str]:
         role, text = turn.get("role"), turn.get("text")
     else:
         role, text = getattr(turn, "role", None), getattr(turn, "text", None)
-    return ("user" if role == "user" else "model"), str(text or "").strip()
+    return ("user" if role == "user" else "assistant"), str(text or "").strip()
 
 
 def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAULT_LANG) -> str:
@@ -396,12 +328,12 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
     if len(text) > MAX_QUESTION_LENGTH:
         raise AssistantError("too_long", status_code=400)
 
-    contents: list[Any] = []
+    messages: list[ai.Message] = []
     for turn in list(history or [])[-HISTORY_TURNS:]:
         role, turn_text = _as_turn(turn)
         if turn_text:
-            contents.append(types.Content(role=role, parts=[types.Part(text=turn_text)]))
-    contents.append(types.Content(role="user", parts=[types.Part(text=text)]))
+            messages.append(ai.Message(role, turn_text))
+    messages.append(ai.Message("user", text))
 
     # Today's date (Almaty time) so the model can tell passed events from upcoming ones.
     today = datetime.now(ZoneInfo("Asia/Almaty")).strftime("%A, %d %B %Y")
@@ -412,25 +344,22 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
 
     started = time.monotonic()
     try:
-        response = ask_gemini(contents, system_prompt, deadline=started + RESPONSE_BUDGET)
-    except AssistantError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - show the real cause in the terminal
-        key = _error_key(exc)
-        if key == "unexpected":
-            print(f"[core] unexpected error: {exc!r}")
-        raise AssistantError(key) from exc
+        reply = ai.generate(system_prompt, messages, deadline=started + RESPONSE_BUDGET)
+    except ai.ProviderError as exc:  # its kind is a MESSAGES key: rate_limit, busy, ...
+        if exc.kind == "unexpected":
+            print(f"[core] unexpected error: {exc}")
+        raise AssistantError(exc.kind) from exc
 
     elapsed = time.monotonic() - started
     flag = "  <-- slower than the US5 target" if elapsed > SLOW_RESPONSE else ""
     print(f"[core] answered in {elapsed:.1f}s (target {SLOW_RESPONSE:.0f}s){flag}")
 
-    return (response.text or "").strip() or msg("no_answer", reply_lang)
+    return reply.strip() or msg("no_answer", reply_lang)
 
 
 async def answer_async(
     message: str, history: Iterable[Any] | None = None, lang: str = DEFAULT_LANG
 ) -> str:
     """`answer` for async callers: the blocking call runs in a worker thread,
-    so the Telegram bot keeps serving other students while Gemini thinks."""
+    so the Telegram bot keeps serving other students while the model thinks."""
     return await asyncio.to_thread(answer, message, history, lang)
