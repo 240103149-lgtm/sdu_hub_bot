@@ -41,10 +41,11 @@ from telegram.ext import (
     filters,
 )
 
+import ai
 import core
 import grade
 from grade import PortalError
-from telegram_bot import BOT, COMMAND_LABELS, keep_typing, user_lang
+from telegram_bot import add_command, keep_typing, user_lang
 
 CHOOSE, ASK_ID, ASK_PASSWORD, ASK_CODE = range(4)
 
@@ -177,9 +178,9 @@ G: dict[str, dict[str, str]] = {
 }
 
 MENU = {
-    "kk": ("grade", "Бағалар (портал)"),
-    "ru": ("grade", "Оценки (портал)"),
-    "en": ("grade", "Grades (portal)"),
+    "kk": "Бағалар (портал)",
+    "ru": "Оценки (портал)",
+    "en": "Grades (portal)",
 }
 HELP_LINE = {
     "kk": "/grade — бағалар (университет порталы)",
@@ -410,7 +411,7 @@ def _e(value: str) -> str:
 
 
 # Course names come from the portal in one language. They are translated into
-# the student's language (chosen in /start) with Gemini, once per name.
+# the student's language (chosen in /start) by the AI model (ai.py), once per name.
 _NAMES: dict[tuple[str, str], str] = {}
 TRANSLATE_BUDGET = 8.0  # seconds; after that the original names are shown
 
@@ -423,10 +424,11 @@ def _translate_blocking(names: list[str], lang: str) -> list[str]:
         f"{language}, return it unchanged. Return ONLY a JSON array of strings with exactly "
         "the same number of items, in the same order. No comments and no code fences."
     )
-    response = core.ask_gemini(
-        [json.dumps(names, ensure_ascii=False)], system, deadline=time.monotonic() + TRANSLATE_BUDGET
-    )
-    text = (response.text or "").strip()
+    text = ai.generate(
+        system,
+        [ai.Message("user", json.dumps(names, ensure_ascii=False))],
+        deadline=time.monotonic() + TRANSLATE_BUDGET,
+    ).strip()
     text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
     result = json.loads(text)
     if not (isinstance(result, list) and len(result) == len(names) and all(isinstance(x, str) for x in result)):
@@ -576,13 +578,7 @@ async def on_grade_nav(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 def register_grade(app: Application) -> None:
     """Add /grade and /unlink to the bot. Call it BEFORE the generic text
     handler is added, so the sign-in steps get the student's messages first."""
-    for lang, (name, label) in MENU.items():
-        labels = COMMAND_LABELS[lang]
-        if not any(existing == name for existing, _ in labels):
-            labels.insert(2, (name, label))  # right after /start and /guide
-        help_text = BOT[lang]["help"]
-        if "/grade" not in help_text:
-            BOT[lang]["help"] = help_text.replace("/lang", f"{HELP_LINE[lang]}\n/lang", 1)
+    add_command("grade", MENU, HELP_LINE)
 
     only_text = filters.TEXT & ~filters.COMMAND
     app.add_handler(

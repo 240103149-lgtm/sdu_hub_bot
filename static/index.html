@@ -57,12 +57,13 @@
   .lang + .lang { border-left: 1px solid var(--line); }
   .lang[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
 
-  .tabs { display: flex; gap: 4px; }
+  .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
   .tab {
     appearance: none; background: none; border: 0; cursor: pointer;
     padding: 10px 14px; font: inherit; color: var(--muted);
-    border-bottom: 3px solid transparent;
+    border-bottom: 3px solid transparent; white-space: nowrap; flex-shrink: 0;
   }
+  .tab:focus-visible { outline-offset: -3px; }
   .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--brand); font-weight: 600; }
 
   main { flex: 1; min-height: 0; display: flex; }
@@ -114,9 +115,39 @@
   .guide-body ol, .guide-body ul { padding-left: 1.4em; margin: 0 0 8px; }
   .guide-body ol li { padding-left: 4px; }
 
+  /* Free rooms */
+  .rooms { flex: 1; overflow-y: auto; padding: 24px 20px 40px; }
+  .rooms-body { max-width: 720px; margin: 0 auto; }
+  .rooms-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-bottom: 22px; }
+  .rooms-controls label { flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+  .rooms-controls select {
+    font: inherit; font-size: 1rem; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;
+  }
+  .rooms-now {
+    appearance: none; cursor: pointer; font: inherit; font-weight: 600;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 9px 18px;
+  }
+  .rooms-now:hover { border-color: var(--brand); }
+  .rooms-result[aria-busy="true"] { opacity: .55; }
+  .rooms-result h2 { margin: 0 0 2px; font-size: 1.35rem; }
+  .rooms-when { margin: 0 0 14px; color: var(--muted); }
+  .rooms-note { margin: 0 0 14px; padding: 8px 12px; border-left: 3px solid var(--brand); background: var(--surface); }
+  .block { display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .block-name { flex: 0 0 1.6em; font-weight: 700; padding-top: 3px; }
+  .block-rooms { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .room {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px 10px;
+    font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .room .until { margin-left: 6px; font-weight: 400; font-size: .85em; color: var(--muted); }
+  .rooms-legend { margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: .9rem; color: var(--muted); }
+  .rooms-status { margin: 0; color: var(--muted); }
+  .rooms-status.error { color: var(--error-ink); background: var(--error-bg); padding: 10px 14px; border-radius: 10px; }
+
   @media (max-width: 520px) {
     .msg { max-width: 92%; }
-    header, .messages, .composer, .guide { padding-left: 14px; padding-right: 14px; }
+    header, .messages, .composer, .guide, .rooms { padding-left: 14px; padding-right: 14px; }
   }
 </style>
 </head>
@@ -133,6 +164,7 @@
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="tab-chat" aria-selected="true" aria-controls="panel-chat" data-i18n="tabChat">Ask a question</button>
     <button class="tab" role="tab" id="tab-guide" aria-selected="false" aria-controls="panel-guide" data-i18n="tabGuide">Schedule creation guide</button>
+    <button class="tab" role="tab" id="tab-rooms" aria-selected="false" aria-controls="panel-rooms" data-i18n="tabRooms">Free rooms</button>
   </div>
 </header>
 
@@ -157,6 +189,19 @@
   <section class="panel" id="panel-guide" role="tabpanel" aria-labelledby="tab-guide">
     <div class="guide"><div class="guide-body" id="guide-body"></div></div>
   </section>
+
+  <section class="panel" id="panel-rooms" role="tabpanel" aria-labelledby="tab-rooms">
+    <div class="rooms">
+      <div class="rooms-body">
+        <div class="rooms-controls">
+          <label><span data-i18n="roomsDay">Day</span><select id="rooms-day"></select></label>
+          <label><span data-i18n="roomsTime">Time</span><select id="rooms-time"></select></label>
+          <button class="rooms-now" id="rooms-now" type="button" data-i18n="roomsNow">Now</button>
+        </div>
+        <div class="rooms-result" id="rooms-result" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -176,6 +221,21 @@
       unknownError: "Белгісіз қате шықты.",
       guideLoading: "Жүктелуде…",
       guideError: "Нұсқаулықты жүктей алмадық. knowledge/registration_guide.md файлы бар екенін тексеріп, бетті жаңартыңыз.",
+      tabRooms: "Бос кабинеттер",
+      roomsDay: "Күн",
+      roomsTime: "Уақыт",
+      roomsNow: "Қазір",
+      roomsTitle: "Бос кабинеттер: {n}",
+      roomsStatus: { now: "қазір", next: "келесі сабақ" },
+      roomsNote: {
+        day_over: "Бүгінгі сабақтар аяқталды, сондықтан келесі оқу күні көрсетілді.",
+        day_off: "Бүгін сабақ жоқ, сондықтан келесі оқу күні көрсетілді.",
+      },
+      roomsNone: "Бұл уақытта бос кабинет жоқ.",
+      roomsLegend: "Кабинет жанындағы уақыт — ондағы келесі сабақтың басталуы, оған дейін кабинет бос. Уақыт жазылмаса, сол күні ол жерде сабақ қалмаған. Есеп тек сабақ кестесі бойынша.",
+      roomsLoading: "Жүктелуде…",
+      roomsError: "Бос кабинеттерді жүктей алмадық. data/schedule.json файлы бар екенін тексеріп, бетті жаңартыңыз.",
+      days: { Mo: "Дүйсенбі", Tu: "Сейсенбі", We: "Сәрсенбі", Th: "Бейсенбі", Fr: "Жұма", Sa: "Сенбі", Su: "Жексенбі" },
     },
     ru: {
       title: "Университетский центр знаний",
@@ -192,6 +252,21 @@
       unknownError: "Произошла неизвестная ошибка.",
       guideLoading: "Загрузка…",
       guideError: "Не удалось загрузить инструкцию. Проверьте, что файл knowledge/registration_guide.md существует, и обновите страницу.",
+      tabRooms: "Свободные аудитории",
+      roomsDay: "День",
+      roomsTime: "Время",
+      roomsNow: "Сейчас",
+      roomsTitle: "Свободные аудитории: {n}",
+      roomsStatus: { now: "сейчас", next: "следующая пара" },
+      roomsNote: {
+        day_over: "Занятия на сегодня закончились, поэтому показан следующий учебный день.",
+        day_off: "Сегодня занятий нет, поэтому показан следующий учебный день.",
+      },
+      roomsNone: "В это время свободных аудиторий нет.",
+      roomsLegend: "Время рядом с аудиторией — начало следующего занятия в ней, до него она свободна. Без времени — в этот день занятий там больше нет. Учитывается только расписание занятий.",
+      roomsLoading: "Загрузка…",
+      roomsError: "Не удалось загрузить свободные аудитории. Проверьте, что файл data/schedule.json существует, и обновите страницу.",
+      days: { Mo: "Понедельник", Tu: "Вторник", We: "Среда", Th: "Четверг", Fr: "Пятница", Sa: "Суббота", Su: "Воскресенье" },
     },
     en: {
       title: "University Knowledge Hub",
@@ -208,12 +283,30 @@
       unknownError: "An unknown error occurred.",
       guideLoading: "Loading…",
       guideError: "Couldn't load the guide. Check that knowledge/registration_guide.md exists and refresh the page.",
+      tabRooms: "Free rooms",
+      roomsDay: "Day",
+      roomsTime: "Time",
+      roomsNow: "Now",
+      roomsTitle: "Free rooms: {n}",
+      roomsStatus: { now: "now", next: "next period" },
+      roomsNote: {
+        day_over: "Classes are over for today, so this is the next class day.",
+        day_off: "There are no classes today, so this is the next class day.",
+      },
+      roomsNone: "No rooms are free at this time.",
+      roomsLegend: "The time next to a room is when its next class starts — it's free until then. No time: no more classes there that day. Based on the class schedule only.",
+      roomsLoading: "Loading…",
+      roomsError: "Couldn't load free rooms. Check that data/schedule.json exists and refresh the page.",
+      days: { Mo: "Monday", Tu: "Tuesday", We: "Wednesday", Th: "Thursday", Fr: "Friday", Sa: "Saturday", Su: "Sunday" },
     },
   };
 
   const history = [];
   let busy = false;
   let guideLoaded = false;
+  let rooms = null;          // the last /api/rooms answer
+  let roomsState = "idle";   // idle | loading | ready | error
+  let roomsRequest = 0;      // only the newest request may draw the list
   let lang = pickInitialLang();
 
   const $ = (id) => document.getElementById(id);
@@ -251,6 +344,7 @@
 
     guideLoaded = false;
     if ($("panel-guide").classList.contains("active")) loadGuide();
+    if (roomsState !== "idle") renderRooms();
   }
 
   document.querySelectorAll(".lang").forEach((b) =>
@@ -334,14 +428,19 @@
 
   /* --- tabs --- */
   function showTab(name) {
-    ["chat", "guide"].forEach((n) => {
+    ["chat", "guide", "rooms"].forEach((n) => {
       $("panel-" + n).classList.toggle("active", n === name);
       $("tab-" + n).setAttribute("aria-selected", String(n === name));
     });
+    $("tab-" + name).scrollIntoView({ block: "nearest", inline: "nearest" }); // narrow screens scroll the tabs
     if (name === "guide" && !guideLoaded) loadGuide();
+    // A "right now" list goes stale, so it is refreshed every time the tab
+    // opens; a day and time the student picked are kept.
+    if (name === "rooms" && (!rooms || rooms.status)) loadRooms();
   }
   $("tab-chat").addEventListener("click", () => showTab("chat"));
   $("tab-guide").addEventListener("click", () => showTab("guide"));
+  $("tab-rooms").addEventListener("click", () => showTab("rooms"));
 
   /* --- registration guide (US3) --- */
   function renderGuide(container, text) {
@@ -394,6 +493,94 @@
       if (requestedLang === lang) body.textContent = t("guideError");
     }
   }
+
+  /* --- free rooms --- */
+  async function loadRooms(day, time) {
+    const request = ++roomsRequest;
+    roomsState = "loading";
+    renderRooms();
+    const params = new URLSearchParams({ lang });
+    if (day) params.set("day", day);
+    if (time) params.set("time", time);
+    try {
+      const res = await fetch("/api/rooms?" + params);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      if (request !== roomsRequest) return; // a newer choice is already loading
+      rooms = data;
+      roomsState = "ready";
+    } catch {
+      if (request !== roomsRequest) return;
+      roomsState = "error";
+    }
+    renderRooms();
+  }
+
+  function node(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text != null) el.textContent = text;
+    return el;
+  }
+
+  function fillSelect(select, options, value) {
+    select.textContent = "";
+    options.forEach(([optionValue, label]) => select.appendChild(new Option(label, optionValue)));
+    select.value = value;
+  }
+
+  function renderRooms() {
+    const result = $("rooms-result");
+    result.setAttribute("aria-busy", String(roomsState === "loading"));
+    // While a new choice loads, the old list stays (dimmed) and the selects
+    // keep what the student just picked.
+    if (roomsState === "loading" && rooms) return;
+
+    result.textContent = "";
+    if (roomsState !== "ready") {
+      const failed = roomsState === "error";
+      result.appendChild(node("p", "rooms-status" + (failed ? " error" : ""), t(failed ? "roomsError" : "roomsLoading")));
+      return;
+    }
+
+    fillSelect($("rooms-day"), rooms.days.map((d) => [d, t("days")[d]]), rooms.day);
+    fillSelect($("rooms-time"), rooms.slots.map((s) => [s.start, s.start + "–" + s.end]), rooms.start);
+
+    result.appendChild(node("h2", null, t("roomsTitle").replace("{n}", rooms.free.length)));
+    let when = t("days")[rooms.day] + ", " + rooms.start + "–" + rooms.end;
+    if (t("roomsStatus")[rooms.status]) when += " · " + t("roomsStatus")[rooms.status];
+    result.appendChild(node("p", "rooms-when", when));
+    if (t("roomsNote")[rooms.status]) result.appendChild(node("p", "rooms-note", t("roomsNote")[rooms.status]));
+
+    if (!rooms.free.length) {
+      result.appendChild(node("p", "rooms-status", t("roomsNone")));
+      return;
+    }
+    const blocks = new Map();
+    rooms.free.forEach((room) => {
+      if (!blocks.has(room.block)) blocks.set(room.block, []);
+      blocks.get(room.block).push(room);
+    });
+    blocks.forEach((list, block) => {
+      const row = node("div", "block");
+      row.appendChild(node("div", "block-name", block));
+      const items = node("ul", "block-rooms");
+      list.forEach((room) => {
+        const item = node("li", "room", room.room);
+        item.title = room.building;
+        if (room.until) item.appendChild(node("span", "until", room.until));
+        items.appendChild(item);
+      });
+      row.appendChild(items);
+      result.appendChild(row);
+    });
+    result.appendChild(node("p", "rooms-legend", t("roomsLegend")));
+  }
+
+  const pickRooms = () => loadRooms($("rooms-day").value, $("rooms-time").value);
+  $("rooms-day").addEventListener("change", pickRooms);
+  $("rooms-time").addEventListener("change", pickRooms);
+  $("rooms-now").addEventListener("click", () => loadRooms());
 
   applyLang();
 </script>

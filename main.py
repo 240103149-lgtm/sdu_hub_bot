@@ -20,7 +20,9 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import ai
 import core
+import rooms
 
 TELEGRAM_MODE = os.getenv("TELEGRAM_MODE", "off").strip().lower()  # off | webhook
 WEBHOOK_BASE = os.getenv("TELEGRAM_WEBHOOK_URL", "").strip().rstrip("/")
@@ -132,13 +134,51 @@ def guide(lang: str = "kk"):
     return text
 
 
+@app.get("/api/rooms")
+def free_rooms(day: str | None = None, time: str | None = None, lang: str = "en"):
+    """Free classrooms for one class period: the current one, or ?day=Mo&time=10:30."""
+    lang = core.normalize_lang(lang)
+    try:
+        view = rooms.pick_view(day, time)
+        free = rooms.free_rooms(view)
+        schedule = rooms.load_schedule()
+    except rooms.ScheduleError as exc:
+        print(f"[main] schedule: {exc}")
+        raise HTTPException(status_code=503, detail=core.msg("schedule_missing", lang))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "day": view.day,
+        "start": rooms.hhmm(view.slot.start),
+        "end": rooms.hhmm(view.slot.end),
+        "status": view.status,  # now, next, day_over, day_off - or None if the student chose
+        "days": schedule.days,
+        "slots": [{"start": rooms.hhmm(s.start), "end": rooms.hhmm(s.end)} for s in schedule.slots],
+        "total": len(schedule.rooms),
+        "free": [
+            {
+                "room": item.room.name,
+                "block": item.room.block,
+                "building": item.room.building,
+                "until": rooms.hhmm(item.until) if item.until is not None else None,
+            }
+            for item in free
+        ],
+    }
+
+
 @app.get("/api/health")
 def health():
     """Quick check that the server is up and can see its documents."""
+    try:
+        room_count = len(rooms.load_schedule().rooms)
+    except rooms.ScheduleError:
+        room_count = None
     return {
         "status": "ok",
-        "model": core.MODEL,
+        "ai": ai.describe(),  # the models that may answer, in the order they are tried
         "documents": [path.name for path in core.knowledge_files()],
+        "rooms": room_count,
         "telegram": TELEGRAM_MODE,
     }
 

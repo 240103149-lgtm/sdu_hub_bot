@@ -7,6 +7,10 @@ Covers the same user stories as the website, using the shared `core` module:
     US3  /guide - the step-by-step course registration guide
     US6  Kazakh / Russian / English interface
 
+Bigger features live in their own modules - grade_bot.py (/grade),
+rooms_bot.py (/rooms) - and plug in through build_application(); see
+add_command() for how one adds its command to the menu and to /help.
+
 This module only builds the Application. Run it with `python bot.py`
 (long polling) or let main.py serve it over a webhook.
 """
@@ -159,6 +163,22 @@ COMMAND_LABELS: dict[str, list[tuple[str, str]]] = {
 
 def text(key: str, lang: str) -> str:
     return BOT[core.normalize_lang(lang)][key]
+
+
+def add_command(name: str, menu: dict[str, str], help_line: dict[str, str]) -> None:
+    """Show a feature's command in the "/" menu and in /help, in every language.
+
+    Feature modules call this from their register_* function, e.g.
+        add_command("rooms", {"kk": "Бос кабинеттер", ...}, {"kk": "/rooms — ...", ...})
+    It goes just before /lang, and calling it twice changes nothing.
+    """
+    for lang in core.LANGS:
+        labels = COMMAND_LABELS[lang]
+        if not any(existing == name for existing, _ in labels):
+            before_lang = next((i for i, (n, _) in enumerate(labels) if n == "lang"), len(labels))
+            labels.insert(before_lang, (name, menu[lang]))
+        if f"/{name} " not in BOT[lang]["help"]:
+            BOT[lang]["help"] = BOT[lang]["help"].replace("/lang", f"{help_line[lang]}\n/lang", 1)
 
 
 # --------------------------------------------------------- text helpers ----
@@ -430,8 +450,15 @@ def build_application() -> Application:
         .post_init(_post_init)
         .build()
     )
+    # Feature modules. Registered before the generic text handler below, so
+    # their conversations (e.g. the /grade sign-in) see the messages first.
+    # A new feature = a module with a register_* function + two lines here.
     from grade_bot import register_grade
+    from rooms_bot import register_rooms
+
     register_grade(app)
+    register_rooms(app)
+
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("lang", cmd_lang))
