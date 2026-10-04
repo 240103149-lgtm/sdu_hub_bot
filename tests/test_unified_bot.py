@@ -120,11 +120,15 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         mocked('answer_callback_query', new=AsyncMock(return_value=True))
         self.delete = mocked('delete_message', new=AsyncMock(return_value=True))
         mocked('send_chat_action', new=AsyncMock(return_value=True))
+        self.set_commands = mocked('set_my_commands', new=AsyncMock(return_value=True))
+        self.delete_commands = mocked('delete_my_commands', new=AsyncMock(return_value=True))
+        mocked('get_me', new=AsyncMock(return_value=User(999, 'Hub', True, username='hub_test_bot')))
         self.keypatch = patch.object(telegram_bot, 'STATE_FILE', Path(self.temp.name) / 'state.pickle')
         self.keypatch.start()
         self.app = telegram_bot.build_application()
         message.set_bot(self.app.bot)
         await self.app.initialize()
+        self.app.user_data[42]['lang'] = 'kk'  # Explicit choice for existing Kazakh routing tests.
         self.errors = []
         async def error_handler(update, context):
             self.errors.append(context.error)
@@ -154,6 +158,27 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         if callback:
             payload = {'update_id': self.counter, 'callback_query': {'id': str(self.counter), 'from': user, 'chat_instance': 'test', 'data': callback, 'message': message}}
         await self.app.process_update(Update.de_json(payload, self.app.bot))
+
+    async def test_new_users_start_in_english_despite_telegram_locale(self):
+        self.app.user_data[42].pop('lang', None)
+        await self.update('/start')  # Synthetic Telegram user locale is Kazakh.
+        self.assertEqual(self.app.user_data[42]['lang'], 'en')
+        self.assertIn('Hi, Student!', self.send.call_args.kwargs['text'])
+        self.assertEqual(self.send.call_args.kwargs['reply_markup'].inline_keyboard[0][0].text, '📅 Deadlines')
+        await self.update(callback='lang:ru')
+        await self.update('/start')
+        self.assertIn('Привет, Student!', self.send.call_args.kwargs['text'])
+        self.assertEqual(self.app.user_data[42]['lang'], 'ru')
+        commands = self.set_commands.call_args.args[0]
+        self.assertEqual(commands[0].description, telegram_bot.COMMAND_LABELS['ru'][0][1])
+        self.assertEqual(self.set_commands.call_args.kwargs['scope'].chat_id, 42)
+
+    async def test_default_command_menu_is_english_and_old_locale_menus_are_removed(self):
+        await telegram_bot._post_init(self.app)
+        self.set_commands.assert_awaited_once()
+        commands = self.set_commands.call_args.args[0]
+        self.assertEqual([(c.command, c.description) for c in commands], telegram_bot.COMMAND_LABELS['en'])
+        self.assertEqual([c.kwargs['language_code'] for c in self.delete_commands.call_args_list], ['kk', 'ru'])
 
     async def test_start_has_localized_overview_and_six_buttons(self):
         for lang, heading in [('kk', '📚 Оқу'), ('ru', '📚 Учёба'), ('en', '📚 Study')]:
@@ -226,6 +251,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.send.call_args.kwargs['reply_markup'].inline_keyboard[0][0].text, '📅 Дедлайны')
 
     async def test_help_groups_account_controls_and_group_buttons_are_safe(self):
+        self.app.user_data[-100]['lang'] = 'kk'
         await self.update('/help')
         body = self.send.call_args.kwargs['text']
         self.assertIn('Әңгіме және аккаунттар', body)

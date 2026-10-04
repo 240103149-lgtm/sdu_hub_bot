@@ -23,6 +23,7 @@ from typing import Any
 
 from telegram import (
     BotCommand,
+    BotCommandScopeChat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Update,
@@ -421,12 +422,11 @@ def portal_keyboard(lang: str) -> InlineKeyboardMarkup | None:
 
 
 def user_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    """US6: the student's chosen language, defaulting to their Telegram locale."""
+    """Use the saved language choice; new users always start in English."""
     stored = context.user_data.get("lang") if context.user_data is not None else None
     if stored in core.LANGS:
         return stored
-    user = update.effective_user
-    lang = core.normalize_lang(user.language_code if user else None)
+    lang = core.DEFAULT_LANG
     if context.user_data is not None:
         context.user_data["lang"] = lang
     return lang
@@ -473,6 +473,14 @@ async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.answer()
     chosen = core.normalize_lang(query.data.split(":", 1)[-1])
     context.user_data["lang"] = chosen
+    if update.effective_chat.type == "private":
+        commands = [BotCommand(name, label) for name, label in COMMAND_LABELS[chosen]]
+        try:
+            await context.bot.set_my_commands(
+                commands, scope=BotCommandScopeChat(chat_id=update.effective_chat.id)
+            )
+        except TelegramError as exc:
+            print(f"[bot] could not update the chat command menu: {exc}")
     try:
         await query.edit_message_text(text("lang_set", chosen))
     except TelegramError:
@@ -555,12 +563,12 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _post_init(app: Application) -> None:
-    """Register the command menu, in all three languages (US6)."""
+    """English default menu; explicit language choices get a private-chat menu."""
     default = [BotCommand(name, label) for name, label in COMMAND_LABELS["en"]]
     await app.bot.set_my_commands(default)
     for lang in ("kk", "ru"):
-        commands = [BotCommand(name, label) for name, label in COMMAND_LABELS[lang]]
-        await app.bot.set_my_commands(commands, language_code=lang)
+        # Remove old locale-based menus so Telegram locale does not override English.
+        await app.bot.delete_my_commands(language_code=lang)
 
     me = await app.bot.get_me()
     print(f"[bot] connected as @{me.username}")
