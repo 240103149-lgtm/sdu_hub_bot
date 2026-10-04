@@ -24,6 +24,8 @@ from docx.text.paragraph import Paragraph
 from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
+import logging
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 load_dotenv()
 
