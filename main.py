@@ -141,6 +141,7 @@ def health():
     """Quick check that the server is up and can see its documents."""
     return {
         "status": "ok",
+        "provider": core.AI_PROVIDER,
         "model": core.MODEL,
         "documents": [path.name for path in core.knowledge_files()],
         "telegram": TELEGRAM_MODE,

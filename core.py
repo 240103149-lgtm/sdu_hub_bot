@@ -1,7 +1,7 @@
 """Shared core of the University AI Knowledge Hub.
 
 Both entry points import from here, so the knowledge base, the prompt, the
-Gemini calls and the localized error messages live in exactly one place:
+AI calls and the localized error messages live in exactly one place:
 
     main.py          -> the website / REST API (FastAPI)
     telegram_bot.py  -> the Telegram bot (US5, US3, US6)
@@ -16,6 +16,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+from types import SimpleNamespace
+import httpx
 from zoneinfo import ZoneInfo
 
 from docx import Document
@@ -38,9 +40,13 @@ GUIDE_FILE = KNOWLEDGE_DIR / "registration_guide.md"  # default (Kazakh) guide
 
 # --------------------------------------------------------------- config ----
 
-API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = os.getenv("GEMINI_MODEL")
-FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL")  # optional, used if MODEL is overloaded
+AI_PROVIDER = os.getenv("AI_PROVIDER", "deepseek" if os.getenv("DEEPSEEK_API_KEY") else "gemini").strip().lower()
+if AI_PROVIDER not in {"deepseek", "gemini"}:
+    raise RuntimeError("AI_PROVIDER must be deepseek or gemini")
+PREFIX = AI_PROVIDER.upper()
+API_KEY = os.getenv(f"{PREFIX}_API_KEY")
+MODEL = os.getenv(f"{PREFIX}_MODEL") or ("deepseek-flash" if AI_PROVIDER == "deepseek" else None)
+FALLBACK_MODEL = os.getenv(f"{PREFIX}_FALLBACK_MODEL")
 
 # US5: "the chatbot must generate and show a response within 5 seconds".
 # SLOW_RESPONSE is the target we measure against (every answer is timed and
@@ -48,7 +54,7 @@ FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL")  # optional, used if MODEL i
 # and show the student an error instead of leaving them waiting.
 SLOW_RESPONSE = float(os.getenv("SLOW_RESPONSE_SECONDS", "5"))
 RESPONSE_BUDGET = float(os.getenv("RESPONSE_BUDGET_SECONDS", "20"))
-REQUEST_TIMEOUT = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "15"))  # per HTTP call
+REQUEST_TIMEOUT = float(os.getenv(f"{PREFIX}_TIMEOUT_SECONDS", "15"))
 
 MAX_QUESTION_LENGTH = 2000
 HISTORY_TURNS = 10          # how many past messages are sent back to the model
@@ -58,17 +64,19 @@ RETRYABLE = {429, 500, 502, 503, 504}
 
 if not API_KEY or not MODEL:
     raise RuntimeError(
-        ".env файлында GEMINI_API_KEY және GEMINI_MODEL болуы керек "
+        f"Environment variables {PREFIX}_API_KEY and {PREFIX}_MODEL must be configured. "
         "(.env файлы core.py-мен бір папкада тұруы тиіс). Үлгі: env.example"
     )
 
-try:
-    client = genai.Client(
-        api_key=API_KEY,
-        http_options=types.HttpOptions(timeout=int(REQUEST_TIMEOUT * 1000)),
-    )
-except Exception:  # noqa: BLE001 - older google-genai builds ignore http_options
-    client = genai.Client(api_key=API_KEY)
+client = None
+if AI_PROVIDER == "gemini":
+    try:
+        client = genai.Client(
+            api_key=API_KEY,
+            http_options=types.HttpOptions(timeout=int(REQUEST_TIMEOUT * 1000)),
+        )
+    except Exception:  # noqa: BLE001 - older google-genai builds ignore http_options
+        client = genai.Client(api_key=API_KEY)
 
 # ---------------------------------------------------------- localization ----
 
@@ -326,6 +334,10 @@ def _is_transport_error(exc: BaseException) -> bool:
 
 
 def _error_key(exc: BaseException) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        if exc.response.status_code == 429:
+            return "rate_limit"
+        return "busy" if exc.response.status_code in RETRYABLE else "api_error"
     if isinstance(exc, errors.APIError):
         if exc.code == 429:
             return "rate_limit"
@@ -337,7 +349,27 @@ def _error_key(exc: BaseException) -> str:
     return "unexpected"
 
 
-def ask_gemini(contents: Sequence[Any], system_prompt: str, deadline: float | None = None):
+def _ask_deepseek(contents: Sequence[Any], system_prompt: str, model: str, timeout: float):
+    messages = [{"role": "system", "content": system_prompt}]
+    for content in contents:
+        if isinstance(content, str):
+            role, text = "user", content
+        else:
+            role = "assistant" if content.role == "model" else "user"
+            text = "".join(part.text or "" for part in content.parts or [])
+        messages.append({"role": role, "content": text})
+    response = httpx.post(
+        "https://api.deepseek.com/chat/completions",
+        headers={"Authorization": f"Bearer {API_KEY}"},
+        json={"model": model, "messages": messages, "stream": False,
+              "thinking": {"type": "disabled"}},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return SimpleNamespace(text=response.json()["choices"][0]["message"]["content"])
+
+
+def ask_ai(contents: Sequence[Any], system_prompt: str, deadline: float | None = None):
     """Ask the main model; retry temporary errors, then try the fallback model.
 
     `deadline` is a time.monotonic() value: once it passes we stop retrying so
@@ -351,6 +383,11 @@ def ask_gemini(contents: Sequence[Any], system_prompt: str, deadline: float | No
             if deadline is not None and time.monotonic() >= deadline:
                 raise AssistantError(_error_key(last_exc) if last_exc else "timeout")
             try:
+                if AI_PROVIDER == "deepseek":
+                    timeout = REQUEST_TIMEOUT
+                    if deadline is not None:
+                        timeout = min(timeout, max(0.001, deadline - time.monotonic()))
+                    return _ask_deepseek(contents, system_prompt, model, timeout)
                 return client.models.generate_content(
                     model=model,
                     contents=list(contents),
@@ -363,8 +400,8 @@ def ask_gemini(contents: Sequence[Any], system_prompt: str, deadline: float | No
                 last_exc = exc
                 retryable = (
                     isinstance(exc, errors.APIError) and exc.code in RETRYABLE
-                ) or _is_transport_error(exc)
-                print(f"[core] Gemini error ({model}, attempt {attempt + 1}): {exc}")
+                ) or (isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in RETRYABLE) or _is_transport_error(exc)
+                print(f"[core] {AI_PROVIDER} error ({model}, attempt {attempt + 1}): {exc}")
                 if not retryable:
                     raise
                 pause = RETRY_PAUSE * (attempt + 1)
@@ -377,6 +414,10 @@ def ask_gemini(contents: Sequence[Any], system_prompt: str, deadline: float | No
     if last_exc is not None:
         raise last_exc
     raise AssistantError("timeout")
+
+
+# Compatibility for integrations that still import the old name.
+ask_gemini = ask_ai
 
 
 # ---------------------------------------------------------------- answer ----
@@ -419,7 +460,7 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
 
     started = time.monotonic()
     try:
-        response = ask_gemini(contents, system_prompt, deadline=started + RESPONSE_BUDGET)
+        response = ask_ai(contents, system_prompt, deadline=started + RESPONSE_BUDGET)
     except AssistantError:
         raise
     except Exception as exc:  # noqa: BLE001 - show the real cause in the terminal
@@ -439,5 +480,5 @@ async def answer_async(
     message: str, history: Iterable[Any] | None = None, lang: str = DEFAULT_LANG
 ) -> str:
     """`answer` for async callers: the blocking call runs in a worker thread,
-    so the Telegram bot keeps serving other students while Gemini thinks."""
+    so the Telegram bot keeps serving other students while the AI responds."""
     return await asyncio.to_thread(answer, message, history, lang)
