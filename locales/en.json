@@ -5,10 +5,10 @@
     "rate_limit": "Request limit reached (free tier). Wait a minute and try again.",
     "busy": "Artificial intelligence is under heavy load right now. Try again in a few seconds.",
     "connection": "Connection error: the AI server is unreachable. Check your internet and try again.",
-    "timeout": "The answer took too long. Please send your question again.",
     "api_error": "Couldn't connect to artificial intelligence. Check the API key and model name in .env (the exact cause is in the terminal).",
     "unexpected": "An unexpected error occurred (the exact cause is in the terminal).",
     "no_answer": "I couldn't produce an answer. Try rephrasing your question.",
+    "not_found": "I don't have this information, please contact the administration.",
     "schedule_missing": "The class schedule is unavailable. Please try again later.",
     "guide_missing": "The guide has not been published yet. Please contact the Registrar's office."
   },

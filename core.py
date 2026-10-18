@@ -11,6 +11,7 @@ Nothing in this module knows about HTTP or about Telegram.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import os
 import time
 from datetime import datetime
@@ -38,7 +39,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent
 KNOWLEDGE_DIR = BASE_DIR / "knowledge"
 STATIC_DIR = BASE_DIR / "static"
-GUIDE_FILE = KNOWLEDGE_DIR / "registration_guide.md"  # default (Kazakh) guide
+GUIDE_FILE = KNOWLEDGE_DIR / "registration_guide.md"  # default guide (currently in English)
 
 # --------------------------------------------------------------- config ----
 
@@ -50,13 +51,17 @@ API_KEY = os.getenv(f"{PREFIX}_API_KEY")
 MODEL = os.getenv(f"{PREFIX}_MODEL") or ("deepseek-flash" if AI_PROVIDER == "deepseek" else None)
 FALLBACK_MODEL = os.getenv(f"{PREFIX}_FALLBACK_MODEL")
 
-# US5: "the chatbot must generate and show a response within 5 seconds".
-# SLOW_RESPONSE is the target we measure against (every answer is timed and
-# logged); RESPONSE_BUDGET is the hard cut-off after which we stop retrying
-# and show the student an error instead of leaving them waiting.
+# US1 (chatbot): "the chatbot must generate and show a response within 5
+# seconds"; QA: if the AI server is unreachable or the response takes longer
+# than 5 seconds, stop waiting and show "Connection error".
+# SLOW_RESPONSE is the target every answer is measured and logged against;
+# RESPONSE_BUDGET is the hard cut-off. Raise it in .env only if the model
+# you use cannot answer within 5 seconds.
 SLOW_RESPONSE = float(os.getenv("SLOW_RESPONSE_SECONDS", "5"))
-RESPONSE_BUDGET = float(os.getenv("RESPONSE_BUDGET_SECONDS", "20"))
-REQUEST_TIMEOUT = float(os.getenv(f"{PREFIX}_TIMEOUT_SECONDS", "15"))
+RESPONSE_BUDGET = float(os.getenv("RESPONSE_BUDGET_SECONDS", "5"))
+# One HTTP request may not outlive the budget by much: after the cut-off the
+# request finishes in the background, and this bounds how long it can run.
+REQUEST_TIMEOUT = float(os.getenv(f"{PREFIX}_TIMEOUT_SECONDS", str(RESPONSE_BUDGET + 1)))
 
 MAX_QUESTION_LENGTH = 2000
 HISTORY_TURNS = 10          # how many past messages are sent back to the model
@@ -157,9 +162,9 @@ Rules:
 - The documents may be written in Russian, Kazakh or English. Understand them in
   any of these languages and translate the relevant facts into the answer language.
 - LANGUAGE RULE (STRICT, HIGHEST PRIORITY): The student's question is written in
-  "{ui_language}". Write the ENTIRE answer in "{ui_language}", including fallback
-  answers like "I don't have this information". Ignore the language of the
-  knowledge base documents and of earlier messages in the conversation.
+  "{ui_language}". Write the ENTIRE answer in "{ui_language}", including the
+  fallback sentence below. Ignore the language of the knowledge base documents
+  and of earlier messages in the conversation.
 - FOCUS RULE: Answer only what the student asked, in 1-3 short sentences. Do not
   add other events, background details, tips, or suggestions to check Instagram
   unless the student asked for them. Do not mention today's date unless it is
@@ -174,8 +179,9 @@ Rules:
   (creating) the schedule - in Kazakh "расписание құру" or "сабақ кестесін құру",
   in Russian "составление расписания". Treat these phrases as the same thing and use
   the wording the student used. The menu item in the student portal is named "Course Registration".
-- If the answer is not in the knowledge base, say so clearly and suggest
-  contacting the relevant university office (for example, the Registrar's office).
+- FALLBACK RULE: If the answer is not in the knowledge base, or the question is
+  not about the university, reply with exactly this sentence and nothing else:
+  "{not_found}"
 - Be concise. For procedures, give short numbered steps. Use plain text;
   you may use **bold** for key words, but no tables or headings.
 
@@ -323,7 +329,7 @@ def ask_ai(contents: Sequence[Any], system_prompt: str, deadline: float | None =
     for model in models:
         for attempt in range(MAX_ATTEMPTS):
             if deadline is not None and time.monotonic() >= deadline:
-                raise AssistantError(_error_key(last_exc) if last_exc else "timeout")
+                raise AssistantError(_error_key(last_exc) if last_exc else "connection")
             try:
                 if AI_PROVIDER == "deepseek":
                     timeout = REQUEST_TIMEOUT
@@ -355,7 +361,7 @@ def ask_ai(contents: Sequence[Any], system_prompt: str, deadline: float | None =
 
     if last_exc is not None:
         raise last_exc
-    raise AssistantError("timeout")
+    raise AssistantError("connection")
 
 
 # Compatibility for integrations that still import the old name.
@@ -374,10 +380,16 @@ def _as_turn(turn: Any) -> tuple[str, str]:
     return ("user" if role == "user" else "model"), str(text or "").strip()
 
 
-def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAULT_LANG) -> str:
-    """US5: answer one student question from the approved knowledge base.
+# The AI call runs in its own thread so answer() can stop waiting after
+# RESPONSE_BUDGET even when the HTTP request itself is still hanging.
+_AI_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="ai")
 
-    Raises AssistantError with a key the caller turns into a localized message.
+
+def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAULT_LANG) -> str:
+    """US1: answer one student question from the approved knowledge base.
+
+    Raises AssistantError with a key the caller turns into a localized message;
+    no answer within RESPONSE_BUDGET seconds -> "connection" (Connection error).
     """
     lang = normalize_lang(lang)
     text = (message or "").strip()
@@ -397,12 +409,19 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
     today = datetime.now(ZoneInfo("Asia/Almaty")).strftime("%A, %d %B %Y")
     reply_lang = detect_lang(text, lang)  # the language the question is written in
     system_prompt = SYSTEM_PROMPT.format(
-        ui_language=LANGS[reply_lang], knowledge=load_knowledge(), today=today
+        ui_language=LANGS[reply_lang],
+        knowledge=load_knowledge(),
+        today=today,
+        not_found=msg("not_found", reply_lang),
     )
 
     started = time.monotonic()
+    call = _AI_POOL.submit(ask_ai, contents, system_prompt, started + RESPONSE_BUDGET)
     try:
-        response = ask_ai(contents, system_prompt, deadline=started + RESPONSE_BUDGET)
+        response = call.result(timeout=RESPONSE_BUDGET)
+    except concurrent.futures.TimeoutError:
+        print(f"[core] no answer within {RESPONSE_BUDGET:g}s - stopped waiting (US1: Connection error)")
+        raise AssistantError("connection") from None
     except AssistantError:
         raise
     except Exception as exc:  # noqa: BLE001 - show the real cause in the terminal
@@ -412,8 +431,8 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
         raise AssistantError(key) from exc
 
     elapsed = time.monotonic() - started
-    flag = "  <-- slower than the US5 target" if elapsed > SLOW_RESPONSE else ""
-    print(f"[core] answered in {elapsed:.1f}s (target {SLOW_RESPONSE:.0f}s){flag}")
+    flag = "  <-- slower than the US1 target" if elapsed > SLOW_RESPONSE else ""
+    print(f"[core] answered in {elapsed:.1f}s (target {SLOW_RESPONSE:g}s){flag}")
 
     return (response.text or "").strip() or msg("no_answer", reply_lang)
 
