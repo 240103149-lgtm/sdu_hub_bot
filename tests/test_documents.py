@@ -307,6 +307,7 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_sign_in_first_then_checklist_opens(self):
         await self.text('/documents')
         self.assertIn('first sign in to the university portal', self.last_text())
+        self.assertIn('This is a student-project prototype: documents are not officially sent to SDU', self.last_text())
         buttons = self.send.call_args.kwargs['reply_markup'].inline_keyboard[0]
         self.assertEqual([b.callback_data for b in buttons], ['docs:signin', 'docs:nosignin'])
         self.assertEqual(self.app.user_data[42]['login_flow'], 'documents')
@@ -346,6 +347,7 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Status: draft', board['text'])
         self.assertIn('⬜ UNT certificate — missing', board['text'])
         self.assertIn('sdu.edu.kz/en/admission-3-2', board['text'])
+        self.assertIn('Official submission is through admissions.sdu.edu.kz and the Admissions Office.', board['text'])
         await self.tap('docs:up:unt_certificate')
         self.assertIn('Send «UNT certificate» as a file', self.last_text())
         await self.upload(name='unt.pdf')
@@ -380,6 +382,7 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(submitted), 1)
         self.assertIn('Status: under review (since', submitted[0])  # deferred: waits for staff
         self.assertIn('⏳ UNT certificate — under review', submitted[0])
+        self.assertIn('not officially sent to SDU', submitted[0])  # never mistaken for an official submission
         self.assertEqual(self.submission().status, documents.UNDER_REVIEW)
         header = [c for c in self.send.call_args_list if c.kwargs.get('chat_id') == 777]
         self.assertIn('Student number: 240103149', header[0].kwargs['text'])

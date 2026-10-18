@@ -218,6 +218,8 @@ def checklist_text(catalog: documents.Catalog, submission: documents.Submission,
         "",
         t("rules", lang).format(formats=_formats(all_formats), mb=_mb(catalog.max_bytes)),
         t("source", lang).format(url=catalog.source, date=checked),
+        "",
+        t("prototype", lang),
     ]
     return "\n".join(lines)
 
@@ -257,7 +259,7 @@ def _board(student_id: str, lang: str) -> tuple[str, InlineKeyboardMarkup]:
     catalog = documents.load_catalog()
     submission = documents.store().get(student_id)
     if submission is None or submission.track not in catalog.tracks:
-        return t("choose_track", lang), track_keyboard(catalog, lang)
+        return f"{t('choose_track', lang)}\n\n{t('prototype', lang)}", track_keyboard(catalog, lang)
     return checklist_text(catalog, submission, lang), checklist_keyboard(catalog, submission, lang)
 
 
@@ -275,7 +277,8 @@ async def cmd_documents(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             InlineKeyboardButton(t("btn_signin", lang), callback_data="docs:signin"),
             InlineKeyboardButton(t("btn_cancel", lang), callback_data="docs:nosignin"),
         ]])
-        await update.effective_message.reply_text(t("need_link", lang), reply_markup=keyboard)
+        text = f"{t('need_link', lang)}\n\n{t('prototype', lang)}"
+        await update.effective_message.reply_text(text, reply_markup=keyboard)
         return grade_bot.CHOOSE
     text, markup = _board(student_id, lang)
     await _send(context.bot, update.effective_chat.id, text, markup)

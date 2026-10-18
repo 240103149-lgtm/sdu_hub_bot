@@ -213,6 +213,7 @@
   "documents": {
     "title": "Enrollment documents",
     "need_link": "📄 Enrollment documents\n\nDocuments are attached to your university account (student number), so first sign in to the university portal (my.sdu.edu.kz). This confirms that your account is active. Sign in now?",
+    "prototype": "ℹ️ This is a student-project prototype: documents are not officially sent to SDU. Official submission is through admissions.sdu.edu.kz and the Admissions Office.",
     "btn_signin": "🔐 Sign in",
     "btn_cancel": "✖️ Cancel",
     "cancelled": "You need to sign in to the portal to submit documents. Send /documents when you're ready.",
@@ -237,7 +238,7 @@
     "btn_submit": "📤 Submit",
     "btn_refresh": "🔄 Refresh",
     "btn_track": "🔁 Change track",
-    "ask_file": "📎 Send «{doc}» as a file.\nFormat: {formats}, up to {mb} MB.\n🔒 Only the admissions staff who check documents can see the file.",
+    "ask_file": "📎 Send «{doc}» as a file.\nFormat: {formats}, up to {mb} MB.\n🔒 Only the reviewers set up in this bot can see the file.",
     "bad_format": "❌ «{doc}» was not accepted: wrong file format ({got}). Allowed: {formats}. Please send the correct file again.",
     "too_large": "❌ «{doc}» was not accepted: the file is too large ({size} MB, the limit is {mb} MB).",
     "saved": "✅ «{doc}» uploaded: {file}",
