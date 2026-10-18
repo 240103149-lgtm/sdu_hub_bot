@@ -11,6 +11,7 @@ Nothing in this module knows about HTTP or about Telegram.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import os
 import time
 from datetime import datetime
@@ -26,6 +27,8 @@ from docx.text.paragraph import Paragraph
 from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
+
+import i18n
 import logging
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -36,7 +39,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent
 KNOWLEDGE_DIR = BASE_DIR / "knowledge"
 STATIC_DIR = BASE_DIR / "static"
-GUIDE_FILE = KNOWLEDGE_DIR / "registration_guide.md"  # default (Kazakh) guide
+GUIDE_FILE = KNOWLEDGE_DIR / "registration_guide.md"  # default guide (currently in English)
 
 # --------------------------------------------------------------- config ----
 
@@ -48,13 +51,17 @@ API_KEY = os.getenv(f"{PREFIX}_API_KEY")
 MODEL = os.getenv(f"{PREFIX}_MODEL") or ("deepseek-flash" if AI_PROVIDER == "deepseek" else None)
 FALLBACK_MODEL = os.getenv(f"{PREFIX}_FALLBACK_MODEL")
 
-# US5: "the chatbot must generate and show a response within 5 seconds".
-# SLOW_RESPONSE is the target we measure against (every answer is timed and
-# logged); RESPONSE_BUDGET is the hard cut-off after which we stop retrying
-# and show the student an error instead of leaving them waiting.
+# US1 (chatbot): "the chatbot must generate and show a response within 5
+# seconds"; QA: if the AI server is unreachable or the response takes longer
+# than 5 seconds, stop waiting and show "Connection error".
+# SLOW_RESPONSE is the target every answer is measured and logged against;
+# RESPONSE_BUDGET is the hard cut-off. Raise it in .env only if the model
+# you use cannot answer within 5 seconds.
 SLOW_RESPONSE = float(os.getenv("SLOW_RESPONSE_SECONDS", "5"))
-RESPONSE_BUDGET = float(os.getenv("RESPONSE_BUDGET_SECONDS", "20"))
-REQUEST_TIMEOUT = float(os.getenv(f"{PREFIX}_TIMEOUT_SECONDS", "15"))
+RESPONSE_BUDGET = float(os.getenv("RESPONSE_BUDGET_SECONDS", "5"))
+# One HTTP request may not outlive the budget by much: after the cut-off the
+# request finishes in the background, and this bounds how long it can run.
+REQUEST_TIMEOUT = float(os.getenv(f"{PREFIX}_TIMEOUT_SECONDS", str(RESPONSE_BUDGET + 1)))
 
 MAX_QUESTION_LENGTH = 2000
 HISTORY_TURNS = 10          # how many past messages are sent back to the model
@@ -83,68 +90,8 @@ if AI_PROVIDER == "gemini":
 LANGS = {"kk": "Kazakh", "ru": "Russian", "en": "English"}
 DEFAULT_LANG = "en"
 
-MESSAGES: dict[str, dict[str, str]] = {
-    "empty": {
-        "kk": "Сұрақ бос болмауы керек.",
-        "ru": "Вопрос не должен быть пустым.",
-        "en": "The question can't be empty.",
-    },
-    "too_long": {
-        "kk": "Сұрақ тым ұзын (ең көбі 2000 таңба).",
-        "ru": "Вопрос слишком длинный (не более 2000 символов).",
-        "en": "The question is too long (2000 characters max).",
-    },
-    "rate_limit": {
-        "kk": "Сұраулар лимитіне жеттік (тегін тариф). Бір минут күтіп, қайта жіберіңіз.",
-        "ru": "Достигнут лимит запросов (бесплатный тариф). Подождите минуту и отправьте снова.",
-        "en": "Request limit reached (free tier). Wait a minute and try again.",
-    },
-    "busy": {
-        "kk": "Жасанды интеллект қазір жүктемеге ұшырап тұр. Бірнеше секундтан кейін қайта жіберіңіз.",
-        "ru": "Искусственный интеллект сейчас перегружен. Отправьте вопрос снова через несколько секунд.",
-        "en": "Artificial intelligence is under heavy load right now. Try again in a few seconds.",
-    },
-    # US5: "a user must be warned with a Connection error message if the AI
-    # server is unreachable".
-    "connection": {
-        "kk": "Қосылым қатесі: AI серверіне жете алмадық. Интернетті тексеріп, қайталап көріңіз.",
-        "ru": "Ошибка соединения: не удалось связаться с AI-сервером. Проверьте интернет и попробуйте снова.",
-        "en": "Connection error: the AI server is unreachable. Check your internet and try again.",
-    },
-    "timeout": {
-        "kk": "Жауап тым ұзақ дайындалды. Сұрағыңызды қайта жіберіп көріңіз.",
-        "ru": "Ответ готовился слишком долго. Попробуйте отправить вопрос ещё раз.",
-        "en": "The answer took too long. Please send your question again.",
-    },
-    "api_error": {
-        "kk": "Жасанды интеллектке қосыла алмадық. .env-тегі API кілті мен модель атауын тексеріңіз "
-        "(нақты себебі терминалда жазылған).",
-        "ru": "Не удалось подключиться к искусственному интеллекту. Проверьте API-ключ и название модели в .env "
-        "(точная причина указана в терминале).",
-        "en": "Couldn't connect to artificial intelligence. Check the API key and model name in .env "
-        "(the exact cause is in the terminal).",
-    },
-    "unexpected": {
-        "kk": "Күтпеген қате шықты (нақты себебі терминалда жазылған).",
-        "ru": "Произошла непредвиденная ошибка (точная причина указана в терминале).",
-        "en": "An unexpected error occurred (the exact cause is in the terminal).",
-    },
-    "no_answer": {
-        "kk": "Жауап бере алмадым. Сұрағыңызды басқаша құрастырып көріңіз.",
-        "ru": "Не удалось подготовить ответ. Попробуйте переформулировать вопрос.",
-        "en": "I couldn't produce an answer. Try rephrasing your question.",
-    },
-    "schedule_missing": {
-        "kk": "Сабақ кестесі жүктелмеді. Бос кабинеттерді кейінірек тексеріңіз.",
-        "ru": "Расписание не загружено. Попробуйте проверить аудитории позже.",
-        "en": "The class schedule is unavailable. Please try again later.",
-    },
-    "guide_missing": {
-        "kk": "Нұсқаулық әлі жарияланбаған. Тіркеу бөлімімен (Registrar's office) хабарласыңыз.",
-        "ru": "Инструкция пока не опубликована. Обратитесь в отдел регистрации (Registrar's office).",
-        "en": "The guide has not been published yet. Please contact the Registrar's office.",
-    },
-}
+# The texts are in locales/<lang>.json, section "core" (US6).
+MESSAGES: dict[str, dict[str, str]] = i18n.by_key("core")
 
 
 def normalize_lang(value: Any, default: str = DEFAULT_LANG) -> str:
@@ -215,9 +162,9 @@ Rules:
 - The documents may be written in Russian, Kazakh or English. Understand them in
   any of these languages and translate the relevant facts into the answer language.
 - LANGUAGE RULE (STRICT, HIGHEST PRIORITY): The student's question is written in
-  "{ui_language}". Write the ENTIRE answer in "{ui_language}", including fallback
-  answers like "I don't have this information". Ignore the language of the
-  knowledge base documents and of earlier messages in the conversation.
+  "{ui_language}". Write the ENTIRE answer in "{ui_language}", including the
+  fallback sentence below. Ignore the language of the knowledge base documents
+  and of earlier messages in the conversation.
 - FOCUS RULE: Answer only what the student asked, in 1-3 short sentences. Do not
   add other events, background details, tips, or suggestions to check Instagram
   unless the student asked for them. Do not mention today's date unless it is
@@ -232,8 +179,9 @@ Rules:
   (creating) the schedule - in Kazakh "расписание құру" or "сабақ кестесін құру",
   in Russian "составление расписания". Treat these phrases as the same thing and use
   the wording the student used. The menu item in the student portal is named "Course Registration".
-- If the answer is not in the knowledge base, say so clearly and suggest
-  contacting the relevant university office (for example, the Registrar's office).
+- FALLBACK RULE: If the answer is not in the knowledge base, or the question is
+  not about the university, reply with exactly this sentence and nothing else:
+  "{not_found}"
 - Be concise. For procedures, give short numbered steps. Use plain text;
   you may use **bold** for key words, but no tables or headings.
 
@@ -311,16 +259,24 @@ def load_knowledge() -> str:
     return "\n\n".join(parts) if parts else "(knowledge base is empty)"
 
 
+class GuideError(Exception):
+    """The guide exists but could not be read: a temporary failure (US2 Retry)."""
+
+
 def load_guide(lang: str) -> str | None:
-    """US3: the registration guide for one language, or None if not published.
+    """US2: the registration guide for one language, or None if not published.
 
     Uses knowledge/registration_guide.<lang>.md when it exists, otherwise the
-    default knowledge/registration_guide.md.
+    default knowledge/registration_guide.md. Raises GuideError when the file
+    is there but cannot be read.
     """
     lang = normalize_lang(lang, default="kk")
     for path in (KNOWLEDGE_DIR / f"registration_guide.{lang}.md", GUIDE_FILE):
         if path.exists():
-            return path.read_text(encoding="utf-8")
+            try:
+                return path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                raise GuideError(f"{path.name} could not be read: {exc}") from exc
     return None
 
 
@@ -381,7 +337,7 @@ def ask_ai(contents: Sequence[Any], system_prompt: str, deadline: float | None =
     for model in models:
         for attempt in range(MAX_ATTEMPTS):
             if deadline is not None and time.monotonic() >= deadline:
-                raise AssistantError(_error_key(last_exc) if last_exc else "timeout")
+                raise AssistantError(_error_key(last_exc) if last_exc else "connection")
             try:
                 if AI_PROVIDER == "deepseek":
                     timeout = REQUEST_TIMEOUT
@@ -413,7 +369,7 @@ def ask_ai(contents: Sequence[Any], system_prompt: str, deadline: float | None =
 
     if last_exc is not None:
         raise last_exc
-    raise AssistantError("timeout")
+    raise AssistantError("connection")
 
 
 # Compatibility for integrations that still import the old name.
@@ -432,10 +388,16 @@ def _as_turn(turn: Any) -> tuple[str, str]:
     return ("user" if role == "user" else "model"), str(text or "").strip()
 
 
-def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAULT_LANG) -> str:
-    """US5: answer one student question from the approved knowledge base.
+# The AI call runs in its own thread so answer() can stop waiting after
+# RESPONSE_BUDGET even when the HTTP request itself is still hanging.
+_AI_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="ai")
 
-    Raises AssistantError with a key the caller turns into a localized message.
+
+def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAULT_LANG) -> str:
+    """US1: answer one student question from the approved knowledge base.
+
+    Raises AssistantError with a key the caller turns into a localized message;
+    no answer within RESPONSE_BUDGET seconds -> "connection" (Connection error).
     """
     lang = normalize_lang(lang)
     text = (message or "").strip()
@@ -455,12 +417,19 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
     today = datetime.now(ZoneInfo("Asia/Almaty")).strftime("%A, %d %B %Y")
     reply_lang = detect_lang(text, lang)  # the language the question is written in
     system_prompt = SYSTEM_PROMPT.format(
-        ui_language=LANGS[reply_lang], knowledge=load_knowledge(), today=today
+        ui_language=LANGS[reply_lang],
+        knowledge=load_knowledge(),
+        today=today,
+        not_found=msg("not_found", reply_lang),
     )
 
     started = time.monotonic()
+    call = _AI_POOL.submit(ask_ai, contents, system_prompt, started + RESPONSE_BUDGET)
     try:
-        response = ask_ai(contents, system_prompt, deadline=started + RESPONSE_BUDGET)
+        response = call.result(timeout=RESPONSE_BUDGET)
+    except concurrent.futures.TimeoutError:
+        print(f"[core] no answer within {RESPONSE_BUDGET:g}s - stopped waiting (US1: Connection error)")
+        raise AssistantError("connection") from None
     except AssistantError:
         raise
     except Exception as exc:  # noqa: BLE001 - show the real cause in the terminal
@@ -470,8 +439,8 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
         raise AssistantError(key) from exc
 
     elapsed = time.monotonic() - started
-    flag = "  <-- slower than the US5 target" if elapsed > SLOW_RESPONSE else ""
-    print(f"[core] answered in {elapsed:.1f}s (target {SLOW_RESPONSE:.0f}s){flag}")
+    flag = "  <-- slower than the US1 target" if elapsed > SLOW_RESPONSE else ""
+    print(f"[core] answered in {elapsed:.1f}s (target {SLOW_RESPONSE:g}s){flag}")
 
     return (response.text or "").strip() or msg("no_answer", reply_lang)
 

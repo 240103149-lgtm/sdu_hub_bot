@@ -43,8 +43,10 @@ from telegram.ext import (
 
 import core
 import grade
+import i18n
+import login_guard
 from grade import PortalError
-from telegram_bot import BOT, COMMAND_LABELS, keep_typing, user_lang
+from telegram_bot import BOT, COMMAND_LABELS, keep_typing, retry_keyboard, user_lang
 
 CHOOSE, ASK_ID, ASK_PASSWORD, ASK_CODE = range(4)
 
@@ -53,139 +55,10 @@ PENDING_TTL = 600  # seconds a half-finished sign-in may wait for the 2FA code
 
 # ------------------------------------------------------------------ texts ----
 
-G: dict[str, dict[str, str]] = {
-    "need_link": {
-        "kk": "Бағаларды көру үшін университет порталына (my.sdu.edu.kz) кіріп, "
-        "оны ботпен байланыстыру керек. Қазір байланыстырамыз ба?",
-        "ru": "Чтобы посмотреть оценки, нужно войти в портал университета (my.sdu.edu.kz) "
-        "и связать его с ботом. Сделаем это сейчас?",
-        "en": "To see your grades, you need to sign in to the university portal "
-        "(my.sdu.edu.kz) and link it to the bot. Do it now?",
-    },
-    "btn_register": {"kk": "✅ Тіркелу", "ru": "✅ Зарегистрироваться", "en": "✅ Register"},
-    "btn_cancel": {"kk": "✖️ Бас тарту", "ru": "✖️ Отмена", "en": "✖️ Cancel"},
-    "cancelled": {
-        "kk": "Сіз порталға кіру процесінен бас тарттыңыз. Қаласаңыз, /grade арқылы қайта бастай аласыз.",
-        "ru": "Вы отменили вход в портал. Если передумаете, отправьте /grade снова.",
-        "en": "You cancelled the portal sign-in. If you change your mind, send /grade again.",
-    },
-    "ask_id": {
-        "kk": "Студент нөміріңізді (Student number) жазыңыз.\nБас тарту: /cancel",
-        "ru": "Введите ваш студенческий номер (Student number).\nОтмена: /cancel",
-        "en": "Enter your student number.\nTo cancel: /cancel",
-    },
-    "invalid_id": {
-        "kk": "Студент нөмірі бос болмауы және бос орынсыз болуы керек. Қайта жазыңыз.",
-        "ru": "Студенческий номер не должен быть пустым или содержать пробелы. Введите ещё раз.",
-        "en": "The student number can't be empty or contain spaces. Please enter it again.",
-    },
-    "ask_password": {
-        "kk": "Енді порталдың парольін жазыңыз.\n"
-        "🔒 Пароль тек my.sdu.edu.kz порталына жіберіледі: ботта сақталмайды, "
-        "хабарлама бірден жойылады.",
-        "ru": "Теперь введите пароль от портала.\n"
-        "🔒 Пароль уходит только на my.sdu.edu.kz: бот его не сохраняет, "
-        "а сообщение сразу удаляется.",
-        "en": "Now enter your portal password.\n"
-        "🔒 It is sent only to my.sdu.edu.kz: the bot doesn't store it, "
-        "and the message is deleted right away.",
-    },
-    "logging_in": {
-        "kk": "⏳ Порталға кіріп жатырмын…",
-        "ru": "⏳ Вхожу в портал…",
-        "en": "⏳ Signing in to the portal…",
-    },
-    "ask_code": {
-        "kk": "📧 Поштаңызға растау коды жіберілді. Кодты осында жазыңыз.",
-        "ru": "📧 На вашу почту отправлен код подтверждения. Введите его здесь.",
-        "en": "📧 A verification code was sent to your e-mail. Enter it here.",
-    },
-    "bad_code": {
-        "kk": "Код қате немесе мерзімі өтіп кеткен. Кодты қайта жазыңыз (/cancel — бас тарту).",
-        "ru": "Код неверный или просрочен. Введите код ещё раз (/cancel — отмена).",
-        "en": "The code is wrong or expired. Enter it again (/cancel to stop).",
-    },
-    "too_many_codes": {
-        "kk": "Код бірнеше рет қате енгізілді. Қауіпсіздік үшін процесс тоқтатылды. /grade арқылы қайта бастаңыз.",
-        "ru": "Код введён неверно несколько раз. Для безопасности процесс остановлен. Начните заново: /grade.",
-        "en": "The code was wrong several times, so the sign-in was stopped for safety. Start again with /grade.",
-    },
-    "bad_credentials": {
-        "kk": "Студент нөмірі немесе пароль қате. /grade арқылы қайта көріңіз.",
-        "ru": "Неверный студенческий номер или пароль. Попробуйте снова: /grade.",
-        "en": "Wrong student number or password. Try again with /grade.",
-    },
-    "unavailable": {
-        "kk": "Портал қазір жауап бермейді. Кейінірек қайталап көріңіз.",
-        "ru": "Портал сейчас не отвечает. Попробуйте позже.",
-        "en": "The portal isn't responding right now. Please try again later.",
-    },
-    "unexpected_page": {
-        "kk": "Портал беті күтілгеннен басқаша болып шықты. Бұл туралы әзірлеушілерге хабарлаңыз.",
-        "ru": "Страница портала выглядит не так, как ожидалось. Сообщите об этом разработчикам.",
-        "en": "The portal page doesn't look as expected. Please tell the developers.",
-    },
-    "session_lost": {
-        "kk": "Кіру сессиясы ескірді (10 минуттан артық болды). /grade арқылы қайта бастаңыз.",
-        "ru": "Сессия входа устарела (прошло больше 10 минут). Начните заново: /grade.",
-        "en": "The sign-in session expired (over 10 minutes). Start again with /grade.",
-    },
-    "linked_ok": {
-        "kk": "✅ Портал ботпен байланыстырылды! Байланысты өшіру: /unlink",
-        "ru": "✅ Портал связан с ботом! Отвязать: /unlink",
-        "en": "✅ The portal is linked to the bot! To unlink: /unlink",
-    },
-    "session_expired": {
-        "kk": "Портал сессиясы аяқталды. /grade арқылы қайта кіріңіз.",
-        "ru": "Сессия на портале закончилась. Войдите заново: /grade.",
-        "en": "Your portal session has expired. Sign in again with /grade.",
-    },
-    "grades_not_configured": {
-        "kk": "Портал байланысқан, бірақ бағаларды көрсету әлі қосылмаған (келесі қадам).",
-        "ru": "Портал связан, но показ оценок ещё не подключён (следующий шаг).",
-        "en": "The portal is linked, but showing grades isn't connected yet (next step).",
-    },
-    "grades_title": {
-        "kk": "📊 Бағаларыңыз",
-        "ru": "📊 Ваши оценки",
-        "en": "📊 Your grades",
-    },
-    "grades_empty": {
-        "kk": "Порталда баға табылмады.",
-        "ru": "На портале оценок не найдено.",
-        "en": "No grades were found on the portal.",
-    },
-    "btn_prev": {"kk": "◀ Алдыңғы", "ru": "◀ Предыдущий", "en": "◀ Previous"},
-    "btn_now": {"kk": "🔄 Қазір", "ru": "🔄 Сейчас", "en": "🔄 Now"},
-    "unit_credit": {"kk": "кр.", "ru": "кр.", "en": "cr."},
-    "lbl_credits": {"kk": "Кредит", "ru": "Кредиты", "en": "Credits"},
-    "semester_title": {
-        "kk": "{years} оқу жылы, {n}-семестр",
-        "ru": "{years}, семестр {n}",
-        "en": "{years}, Semester {n}",
-    },
-    "unlinked": {
-        "kk": "Портал байланысы өшірілді, сақталған деректер жойылды.",
-        "ru": "Связь с порталом удалена, сохранённые данные стёрты.",
-        "en": "The portal is unlinked and the saved data has been deleted.",
-    },
-    "not_linked": {
-        "kk": "Портал байланыстырылмаған. Бастау: /grade",
-        "ru": "Портал не привязан. Начать: /grade",
-        "en": "No portal is linked. Start with /grade",
-    },
-}
+G: dict[str, dict[str, str]] = i18n.by_key("grade")  # locales/<lang>.json, section "grade"
 
-MENU = {
-    "kk": ("grade", "Бағалар (портал)"),
-    "ru": ("grade", "Оценки (портал)"),
-    "en": ("grade", "Grades (portal)"),
-}
-HELP_LINE = {
-    "kk": "/grade — бағалар (университет порталы)",
-    "ru": "/grade — оценки (портал университета)",
-    "en": "/grade — grades (university portal)",
-}
+MENU = {lang: ("grade", label) for lang, label in G["menu"].items()}
+HELP_LINE = G["help_line"]
 
 
 def t(key: str, lang: str) -> str:
@@ -193,7 +66,9 @@ def t(key: str, lang: str) -> str:
 
 
 def _error_text(exc: PortalError, lang: str) -> str:
-    return t(exc.key, lang) if exc.key in G else core.msg("unexpected", lang)
+    if exc.key not in G:
+        return core.msg("unexpected", lang)
+    return t(exc.key, lang).replace("{command}", "/grade")
 
 
 # ------------------------------------------------------- pending sign-ins ----
@@ -280,9 +155,27 @@ async def on_student_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await update.effective_message.reply_text(t("invalid_id", lang))
         return ASK_ID
 
+    locked = login_guard.locked_for(context.bot_data, "portal", value)
+    if locked:  # US7: no password is asked for, and the portal is not contacted
+        await update.effective_message.reply_text(login_guard.locked_text(lang, locked))
+        return ConversationHandler.END
+
     context.user_data["grade_sid"] = value
     await update.effective_message.reply_text(t("ask_password", lang))
     return ASK_PASSWORD
+
+
+# The command a student sends to try again, for each sign-in that uses the portal.
+RETRY_COMMANDS = {"documents": "/documents", "login": "/login"}
+
+
+def _bad_credentials(context: ContextTypes.DEFAULT_TYPE, student_id: str, lang: str) -> str:
+    """US7: "Invalid credentials", the attempts left - or the lock message."""
+    left = login_guard.record_failure(context.bot_data, "portal", student_id)
+    if not left:
+        return login_guard.locked_text(lang, login_guard.LOCK_SECONDS)
+    command = RETRY_COMMANDS.get(context.user_data.get("login_flow"), "/grade")
+    return f"{t('bad_credentials', lang).format(command=command)} {login_guard.attempts_text(lang, left)}"
 
 
 async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -296,15 +189,24 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await context.bot.send_message(update.effective_chat.id, t("session_lost", lang))
         return ConversationHandler.END
 
+    locked = login_guard.locked_for(context.bot_data, "portal", student_id)
+    if locked:
+        await context.bot.send_message(update.effective_chat.id, login_guard.locked_text(lang, locked))
+        return ConversationHandler.END
+
     await _drop_pending(user_id)
     status = await context.bot.send_message(update.effective_chat.id, t("logging_in", lang))
     typing = asyncio.create_task(keep_typing(context.bot, update.effective_chat.id))
     login = grade.PortalLogin()
+    started = time.monotonic()
     try:
         needs_code = await login.submit_credentials(student_id, password)
     except PortalError as exc:
         await login.close()
-        await status.edit_text(_error_text(exc, lang))
+        if exc.key == "bad_credentials":
+            await status.edit_text(_bad_credentials(context, student_id, lang))
+        else:
+            await status.edit_text(_error_text(exc, lang))
         return ConversationHandler.END
     except Exception as exc:  # noqa: BLE001 - the student still gets an answer
         await login.close()
@@ -315,6 +217,8 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         typing.cancel()
         password = ""  # never kept longer than this request
 
+    login_guard.log_timing("portal", "password check", time.monotonic() - started)
+    login_guard.record_success(context.bot_data, "portal", student_id)
     if needs_code:
         PENDING[user_id] = _Pending(login=login, student_id=student_id)
         await status.edit_text(t("ask_code", lang))
@@ -339,8 +243,10 @@ async def on_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     typing = asyncio.create_task(keep_typing(context.bot, update.effective_chat.id))
+    started = time.monotonic()
     try:
         await pending.login.submit_code(code)
+        login_guard.log_timing("portal", "e-mail code check", time.monotonic() - started)
     except PortalError as exc:
         if exc.key == "bad_code":
             pending.attempts += 1
@@ -458,7 +364,11 @@ def _title(sem: grade.Semester, lang: str) -> str:
 def _render(
     sem: grade.Semester, index: int, total: int, lang: str, names: dict[str, str] | None = None
 ) -> str:
-    """One line per course:  📌 CSS 217 | Software Architecture | 5 ECTS | B+"""
+    """One line per course:  📌 CSS 217 | Software Architecture | 5 ECTS | B+
+
+    US5: a grade the portal has not published yet (empty, or "IP" - in
+    progress) is labelled "Not published"; it is never shown as a zero.
+    """
     names = names or {}
     lines = [f"📊 <b>{_e(_title(sem, lang))}</b>  ({index + 1}/{total})", ""]
     for course in sem.courses:
@@ -466,8 +376,10 @@ def _render(
         parts = [f"<b>{_e(course.code)}</b>", _e(names.get(course.name, course.name))]
         if course.ects:
             parts.append(f"{_e(course.ects)} ECTS")
-        if mark:
+        if mark and mark.upper() != "IP":
             parts.append(f"<b>{_e(mark)}</b>")
+        else:
+            parts.append(f"<i>{_e(t('not_published', lang))}</i>")
         lines.append("📌 " + " | ".join(parts))
 
     totals = [
@@ -506,6 +418,14 @@ def _keyboard(index: int, total: int, lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def _records_error(exc: PortalError, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
+    """A temporary failure gets the US5 message and Retry; it is never shown
+    as an empty transcript."""
+    if exc.key == "unavailable":
+        return t("records_unavailable", lang), retry_keyboard("gr:retry", lang)
+    return _error_text(exc, lang), None
+
+
 async def _show_grades(update: Update, context: ContextTypes.DEFAULT_TYPE, lang: str) -> None:
     """/grade for a linked student: open the latest semester."""
     typing = asyncio.create_task(keep_typing(context.bot, update.effective_chat.id))
@@ -516,7 +436,8 @@ async def _show_grades(update: Update, context: ContextTypes.DEFAULT_TYPE, lang:
         if exc.key == "session_expired":
             context.user_data.pop("portal", None)
             _CACHE.pop(update.effective_user.id, None)
-        await update.effective_message.reply_text(_error_text(exc, lang))
+        text, retry = _records_error(exc, lang)
+        await update.effective_message.reply_text(text, reply_markup=retry)
         return
     except Exception as exc:  # noqa: BLE001
         print(f"[grade] unexpected error while reading grades: {exc!r}")
@@ -541,18 +462,20 @@ async def on_grade_nav(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not context.user_data.get("portal"):
         await query.edit_message_text(t("not_linked", lang))
         return
+    arg = query.data.split(":", 1)[1]
     try:
-        semesters = await _load_semesters(context, update.effective_user.id)
+        # Retry after a failure always asks the portal again instead of the cache.
+        semesters = await _load_semesters(context, update.effective_user.id, force=arg == "retry")
         page = None
         if semesters:
-            arg = query.data.split(":", 1)[1]
-            index = len(semesters) - 1 if arg == "now" else min(int(arg), len(semesters) - 1)
+            index = len(semesters) - 1 if arg in ("now", "retry") else min(int(arg), len(semesters) - 1)
             page = await _page(semesters, index, lang)
     except PortalError as exc:
         if exc.key == "session_expired":
             context.user_data.pop("portal", None)
             _CACHE.pop(update.effective_user.id, None)
-        await query.edit_message_text(_error_text(exc, lang))
+        text, retry = _records_error(exc, lang)
+        await query.edit_message_text(text, reply_markup=retry)
         return
     except Exception as exc:  # noqa: BLE001
         print(f"[grade] unexpected error while flipping semesters: {exc!r}")
@@ -584,5 +507,5 @@ def register_grade(app: Application) -> None:
         if "/grade" not in help_text:
             BOT[lang]["help"] = help_text.replace("/lang", f"{HELP_LINE[lang]}\n/lang", 1)
 
-    app.add_handler(CallbackQueryHandler(on_grade_nav, pattern=r"^gr:(now|\d+)$"))
+    app.add_handler(CallbackQueryHandler(on_grade_nav, pattern=r"^gr:(now|retry|\d+)$"))
     app.add_handler(CommandHandler("unlink", cmd_unlink))

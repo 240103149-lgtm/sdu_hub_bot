@@ -41,6 +41,8 @@ from telegram.ext import (
 )
 
 import core
+import i18n
+import login_guard
 import moodle
 from moodle import MoodleError
 from telegram_bot import BOT, COMMAND_LABELS, keep_typing, user_lang, tg_len
@@ -52,121 +54,14 @@ MAX_SHOWN = 20  # deadlines per message; the rest is summarised
 
 # ------------------------------------------------------------------ texts ----
 
-D: dict[str, dict[str, str]] = {
-    "need_link": {
-        "kk": "Дедлайндарды көру үшін Moodle (moodle.sdu.edu.kz) аккаунтыңызды ботпен "
-        "байланыстыру керек. Қазір байланыстырамыз ба?",
-        "ru": "Чтобы увидеть дедлайны, нужно связать ваш аккаунт Moodle (moodle.sdu.edu.kz) "
-        "с ботом. Сделаем это сейчас?",
-        "en": "To see your deadlines, you need to link your Moodle account "
-        "(moodle.sdu.edu.kz) to the bot. Do it now?",
-    },
-    "btn_register": {"kk": "✅ Тіркелу", "ru": "✅ Зарегистрироваться", "en": "✅ Register"},
-    "btn_cancel": {"kk": "✖️ Бас тарту", "ru": "✖️ Отмена", "en": "✖️ Cancel"},
-    "cancelled": {
-        "kk": "Сіз Moodle-ге кіру процесінен бас тарттыңыз. Қаласаңыз, /deadline арқылы қайта бастай аласыз.",
-        "ru": "Вы отменили вход в Moodle. Если передумаете, отправьте /deadline снова.",
-        "en": "You cancelled the Moodle sign-in. If you change your mind, send /deadline again.",
-    },
-    "ask_user": {
-        "kk": "Moodle логиніңізді (username) жазыңыз.\nБас тарту: /cancel",
-        "ru": "Введите ваш логин от Moodle (username).\nОтмена: /cancel",
-        "en": "Enter your Moodle username.\nTo cancel: /cancel",
-    },
-    "invalid_user": {
-        "kk": "Логин бос болмауы және бос орынсыз болуы керек. Қайта жазыңыз.",
-        "ru": "Логин не должен быть пустым или содержать пробелы. Введите ещё раз.",
-        "en": "The username can't be empty or contain spaces. Please enter it again.",
-    },
-    "ask_pass": {
-        "kk": "Енді Moodle парольін жазыңыз.\n"
-        "🔒 Пароль тек moodle.sdu.edu.kz сайтына жіберіледі: ботта сақталмайды, "
-        "хабарлама бірден жойылады.",
-        "ru": "Теперь введите пароль от Moodle.\n"
-        "🔒 Пароль уходит только на moodle.sdu.edu.kz: бот его не сохраняет, "
-        "а сообщение сразу удаляется.",
-        "en": "Now enter your Moodle password.\n"
-        "🔒 It is sent only to moodle.sdu.edu.kz: the bot doesn't store it, "
-        "and the message is deleted right away.",
-    },
-    "logging_in": {
-        "kk": "⏳ Moodle-ге кіріп жатырмын…",
-        "ru": "⏳ Вхожу в Moodle…",
-        "en": "⏳ Signing in to Moodle…",
-    },
-    "linked_ok": {
-        "kk": "✅ Moodle ботпен байланыстырылды! Байланысты өшіру: /unlink_moodle",
-        "ru": "✅ Moodle связан с ботом! Отвязать: /unlink_moodle",
-        "en": "✅ Moodle is linked to the bot! To unlink: /unlink_moodle",
-    },
-    "bad_credentials": {
-        "kk": "Логин немесе пароль қате. /deadline арқылы қайта көріңіз.",
-        "ru": "Неверный логин или пароль. Попробуйте снова: /deadline.",
-        "en": "Wrong username or password. Try again with /deadline.",
-    },
-    "unavailable": {
-        "kk": "Moodle қазір жауап бермейді. Кейінірек қайталап көріңіз.",
-        "ru": "Moodle сейчас не отвечает. Попробуйте позже.",
-        "en": "Moodle isn't responding right now. Please try again later.",
-    },
-    "unexpected_page": {
-        "kk": "Moodle жауабы күтілгеннен басқаша болып шықты. Бұл туралы әзірлеушілерге хабарлаңыз.",
-        "ru": "Ответ Moodle выглядит не так, как ожидалось. Сообщите об этом разработчикам.",
-        "en": "Moodle's response doesn't look as expected. Please tell the developers.",
-    },
-    "session_expired": {
-        "kk": "Moodle сессиясы аяқталды. /deadline арқылы қайта кіріңіз.",
-        "ru": "Сессия в Moodle закончилась. Войдите заново: /deadline.",
-        "en": "Your Moodle session has expired. Sign in again with /deadline.",
-    },
-    "session_lost": {
-        "kk": "Кіру сессиясы ескірді. /deadline арқылы қайта бастаңыз.",
-        "ru": "Сессия входа устарела. Начните заново: /deadline.",
-        "en": "The sign-in session expired. Start again with /deadline.",
-    },
-    "title": {"kk": "📅 Дедлайндар", "ru": "📅 Дедлайны", "en": "📅 Deadlines"},
-    "none": {
-        "kk": "Жақын арада тапсыратын тапсырма жоқ 🎉",
-        "ru": "Ближайших дедлайнов нет 🎉",
-        "en": "No upcoming deadlines 🎉",
-    },
-    "overdue": {"kk": "⚠️ Мерзімі өткен", "ru": "⚠️ Просрочено", "en": "⚠️ Overdue"},
-    "more": {"kk": "…және тағы {n}", "ru": "…и ещё {n}", "en": "…and {n} more"},
-    "in": {"kk": "{x} қалды", "ru": "через {x}", "en": "in {x}"},
-    "unlinked": {
-        "kk": "Moodle байланысы өшірілді, сақталған деректер жойылды.",
-        "ru": "Связь с Moodle удалена, сохранённые данные стёрты.",
-        "en": "Moodle is unlinked and the saved data has been deleted.",
-    },
-    "not_linked": {
-        "kk": "Moodle байланыстырылмаған. Бастау: /deadline",
-        "ru": "Moodle не привязан. Начать: /deadline",
-        "en": "No Moodle account is linked. Start with /deadline",
-    },
-}
+D: dict[str, dict[str, str]] = i18n.by_key("deadline")  # locales/<lang>.json, section "deadline"
 
-UNITS = {"kk": ("күн", "сағ", "мин"), "ru": ("д", "ч", "мин"), "en": ("d", "h", "m")}
-WEEKDAYS = {
-    "kk": ["Дс", "Сс", "Ср", "Бс", "Жм", "Сб", "Жс"],
-    "ru": ["пн", "вт", "ср", "чт", "пт", "сб", "вс"],
-    "en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-}
-MONTHS = {
-    "kk": ["қаң", "ақп", "нау", "сәу", "мам", "мау", "шіл", "там", "қыр", "қаз", "қар", "жел"],
-    "ru": ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"],
-    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
-}
+UNITS = {lang: tuple(units) for lang, units in D["units"].items()}
+WEEKDAYS = D["weekdays"]
+MONTHS = D["months"]
 
-MENU = {
-    "kk": ("deadline", "Дедлайндар (Moodle)"),
-    "ru": ("deadline", "Дедлайны (Moodle)"),
-    "en": ("deadline", "Deadlines (Moodle)"),
-}
-HELP_LINE = {
-    "kk": "/deadline — дедлайндар (Moodle)",
-    "ru": "/deadline — дедлайны (Moodle)",
-    "en": "/deadline — deadlines (Moodle)",
-}
+MENU = {lang: ("deadline", label) for lang, label in D["menu"].items()}
+HELP_LINE = D["help_line"]
 
 
 def t(key: str, lang: str) -> str:
@@ -361,6 +256,12 @@ async def on_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await update.effective_message.reply_text(t("invalid_user", lang))
         return ASK_USER
 
+    locked = login_guard.locked_for(context.bot_data, "moodle", value)
+    if locked:  # US7: no password is asked for, and Moodle is not contacted
+        _close_flow(update.effective_user.id, context)
+        await update.effective_message.reply_text(login_guard.locked_text(lang, locked))
+        return ConversationHandler.END
+
     context.user_data["deadline_user"] = value
     await update.effective_message.reply_text(t("ask_pass", lang))
     return ASK_PASS
@@ -378,13 +279,26 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await context.bot.send_message(chat_id, t("session_lost", lang))
         return ConversationHandler.END
 
+    locked = login_guard.locked_for(context.bot_data, "moodle", username)
+    if locked:
+        _close_flow(user_id, context)
+        await context.bot.send_message(chat_id, login_guard.locked_text(lang, locked))
+        return ConversationHandler.END
+
     status = await context.bot.send_message(chat_id, t("logging_in", lang))
     typing = asyncio.create_task(keep_typing(context.bot, chat_id))
+    started = time.monotonic()
     try:
         session = await moodle.login(username, password)
+        login_guard.log_timing("moodle", "sign-in", time.monotonic() - started)
     except MoodleError as exc:
         _close_flow(user_id, context)
-        await status.edit_text(_error_text(exc, lang))
+        text = _error_text(exc, lang)
+        if exc.key == "bad_credentials":  # US7: count it; lock after too many
+            left = login_guard.record_failure(context.bot_data, "moodle", username)
+            text = f"{text} {login_guard.attempts_text(lang, left)}" if left else login_guard.locked_text(
+                lang, login_guard.LOCK_SECONDS)
+        await status.edit_text(text)
         return ConversationHandler.END
     except Exception as exc:  # noqa: BLE001
         _close_flow(user_id, context)
@@ -395,6 +309,7 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         typing.cancel()
         password = ""  # never kept longer than this request
 
+    login_guard.record_success(context.bot_data, "moodle", username)
     context.user_data["moodle"] = session
     _close_flow(user_id, context)
     await status.edit_text(t("linked_ok", lang))

@@ -6,9 +6,12 @@
       "config": {
         "includeFiles": [
           "core.py",
+          "i18n.py",
           "main.py",
           "telegram_bot.py",
           "accounts_bot.py",
+          "login_bot.py",
+          "login_guard.py",
           "grade.py",
           "grade_bot.py",
           "deadline_bot.py",
@@ -19,6 +22,7 @@
           "documents.py",
           "documents_bot.py",
           "data/*.json",
+          "locales/*.json",
           "static/**",
           "knowledge/**"
         ]

@@ -12,15 +12,17 @@ same process - useful once the project is deployed behind an HTTPS domain.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import core
+import i18n
 
 TELEGRAM_MODE = os.getenv("TELEGRAM_MODE", "off").strip().lower()  # off | webhook
 WEBHOOK_BASE = os.getenv("TELEGRAM_WEBHOOK_URL", "").strip().rstrip("/")
@@ -128,10 +130,18 @@ def chat(req: ChatRequest):
 
 @app.get("/api/guide", response_class=PlainTextResponse)
 def guide(lang: str = "kk"):
-    """US3: the registration guide for the requested language."""
+    """US2: the registration guide for the requested language.
+
+    404: not published for this semester; 503: temporarily unreadable (the
+    page then offers Retry).
+    """
     lang = core.normalize_lang(lang, default="kk")
-    text = core.load_guide(lang)
-    if text is None:
+    try:
+        text = core.load_guide(lang)
+    except core.GuideError as exc:
+        print(f"[main] registration guide: {exc}")
+        raise HTTPException(status_code=503, detail=core.msg("guide_error", lang))
+    if text is None or not text.strip():
         raise HTTPException(status_code=404, detail=core.msg("guide_missing", lang))
     return text
 
@@ -178,9 +188,13 @@ if core.STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=core.STATIC_DIR), name="static")
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def index():
+    """The website, with its texts from locales/<lang>.json put into the page (US6)."""
     page = core.STATIC_DIR / "index.html"
     if not page.exists():
         raise HTTPException(status_code=404, detail="static/index.html not found")
-    return FileResponse(page)
+    texts = {lang: i18n.section(lang, "web") for lang in i18n.LANGS}
+    # "<" is escaped so no text can ever close the <script> element early.
+    payload = json.dumps(texts, ensure_ascii=False).replace("<", "\\u003c")
+    return page.read_text(encoding="utf-8").replace("/*I18N*/null", payload, 1)

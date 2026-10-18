@@ -113,6 +113,10 @@
   .guide-body p, .guide-body li { margin: 0 0 6px; }
   .guide-body ol, .guide-body ul { padding-left: 1.4em; margin: 0 0 8px; }
   .guide-body ol li { padding-left: 4px; }
+  .guide-body table { border-collapse: collapse; width: 100%; margin: 4px 0 14px; font-size: .95rem; }
+  .guide-body th, .guide-body td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+  .guide-body th { background: var(--surface); }
+  .guide-body a, .msg a { color: inherit; }
 
   @media (max-width: 520px) {
     .msg { max-width: 92%; }
@@ -160,56 +164,8 @@
 </main>
 
 <script>
-  const I18N = {
-    kk: {
-      title: "Университет білім орталығы",
-      tabChat: "Сұрақ қою",
-      tabGuide: "Расписание құру нұсқаулығы",
-      emptyTitle: "Университет туралы сұраңыз",
-      emptyText: "Қазақша, орысша немесе ағылшынша жаза аласыз. Жауап университеттің бекітілген құжаттарына негізделеді.",
-      chips: ["Расписание қалай құрамын?", "Расписание құру мерзімі қашан бітеді?", "Пререквизит орындалмаса не істеймін?"],
-      placeholder: "Сұрағыңызды жазыңыз",
-      inputLabel: "Сұрақ",
-      send: "Жіберу",
-      pending: "Жауап дайындалып жатыр…",
-      offline: "Серверге қосыла алмадық. Терминалда сервер жұмыс істеп тұрғанын тексеріңіз.",
-      unknownError: "Белгісіз қате шықты.",
-      guideLoading: "Жүктелуде…",
-      guideError: "Нұсқаулықты жүктей алмадық. knowledge/registration_guide.md файлы бар екенін тексеріп, бетті жаңартыңыз.",
-    },
-    ru: {
-      title: "Университетский центр знаний",
-      tabChat: "Задать вопрос",
-      tabGuide: "Инструкция по составлению расписания",
-      emptyTitle: "Спросите об университете",
-      emptyText: "Можно писать на казахском, русском или английском. Ответы основаны на утверждённых документах университета.",
-      chips: ["Как составить расписание?", "Когда заканчивается составление расписания?", "Что делать, если не выполнен пререквизит?"],
-      placeholder: "Введите ваш вопрос",
-      inputLabel: "Вопрос",
-      send: "Отправить",
-      pending: "Готовлю ответ…",
-      offline: "Не удалось подключиться к серверу. Проверьте, что сервер запущен в терминале.",
-      unknownError: "Произошла неизвестная ошибка.",
-      guideLoading: "Загрузка…",
-      guideError: "Не удалось загрузить инструкцию. Проверьте, что файл knowledge/registration_guide.md существует, и обновите страницу.",
-    },
-    en: {
-      title: "University Knowledge Hub",
-      tabChat: "Ask a question",
-      tabGuide: "Schedule creation guide",
-      emptyTitle: "Ask about the university",
-      emptyText: "You can write in Kazakh, Russian or English. Answers are based on the university's approved documents.",
-      chips: ["How do I create my schedule?", "When does schedule creation close?", "What if I don't meet a prerequisite?"],
-      placeholder: "Type your question",
-      inputLabel: "Question",
-      send: "Send",
-      pending: "Preparing an answer…",
-      offline: "Couldn't reach the server. Check that the server is running in the terminal.",
-      unknownError: "An unknown error occurred.",
-      guideLoading: "Loading…",
-      guideError: "Couldn't load the guide. Check that knowledge/registration_guide.md exists and refresh the page.",
-    },
-  };
+  // Texts come from locales/<lang>.json (section "web"); main.py puts them here (US6).
+  const I18N = /*I18N*/null || { en: {} };
 
   const history = [];
   let busy = false;
@@ -218,7 +174,9 @@
 
   const $ = (id) => document.getElementById(id);
   const thread = $("thread"), messages = $("messages"), input = $("input"), sendBtn = $("send");
-  const t = (key) => I18N[lang][key];
+  // A text in the chosen language, else English, else nothing (the page then
+  // keeps the English wording written in the HTML).
+  const t = (key) => (I18N[lang] || {})[key] ?? (I18N.en || {})[key] ?? "";
 
   function pickInitialLang() {
     try {
@@ -231,8 +189,11 @@
 
   function applyLang() {
     document.documentElement.lang = lang;
-    document.title = t("title");
-    document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+    document.title = t("title") || document.title;
+    document.querySelectorAll("[data-i18n]").forEach((el) => {
+      const value = t(el.dataset.i18n);
+      if (value) el.textContent = value;
+    });
     input.placeholder = t("placeholder");
     input.setAttribute("aria-label", t("inputLabel"));
     document.querySelectorAll(".lang").forEach((b) =>
@@ -240,7 +201,7 @@
 
     const chips = $("chips");
     chips.textContent = "";
-    t("chips").forEach((text) => {
+    (t("chips") || []).forEach((text) => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "chip";
@@ -261,16 +222,28 @@
     }));
 
   /* --- text rendering (DOM only, no innerHTML) --- */
-  function renderInline(parent, text) {
-    text.split(/\*\*(.+?)\*\*/g).forEach((part, i) => {
-      if (i % 2) {
-        const s = document.createElement("strong");
-        s.textContent = part;
-        parent.appendChild(s);
+  // **bold**, [text](https://link) and Markdown escapes such as "Add \- Drop".
+  function renderInline(parent, raw) {
+    const text = raw.replace(/\\([\\`*_{}\[\]()#+\-.!|>~])/g, "$1");
+    const pattern = /\[([^\[\]\n]+)\]\((https?:\/\/[^\s()]+)\)|\*\*(.+?)\*\*/g;
+    let last = 0, m;
+    while ((m = pattern.exec(text))) {
+      if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+      if (m[1] !== undefined) {
+        const a = document.createElement("a");
+        a.href = m[2];
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        renderInline(a, m[1]);
+        parent.appendChild(a);
       } else {
-        parent.appendChild(document.createTextNode(part));
+        const s = document.createElement("strong");
+        renderInline(s, m[3]);
+        parent.appendChild(s);
       }
-    });
+      last = pattern.lastIndex;
+    }
+    if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
   }
   function renderRich(parent, text) {
     parent.textContent = "";
@@ -343,7 +316,10 @@
   $("tab-chat").addEventListener("click", () => showTab("chat"));
   $("tab-guide").addEventListener("click", () => showTab("guide"));
 
-  /* --- registration guide (US3) --- */
+  /* --- registration guide (US2) --- */
+  const cells = (line) => line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+  const isTableRule = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line) && line.includes("|");
+
   function renderGuide(container, text) {
     container.textContent = "";
     let list = null, listType = null;
@@ -358,11 +334,24 @@
       renderInline(li, content);
       list.appendChild(li);
     };
-    for (const raw of text.split("\n")) {
-      const line = raw.trim();
+    const lines = text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
       if (!line || line.startsWith("<!--")) { closeList(); continue; }
       let m;
-      if ((m = line.match(/^(#{1,3})\s+(.*)/))) {
+      if (line.startsWith("|") && isTableRule(lines[i + 1] || "")) {
+        closeList();
+        const table = document.createElement("table");
+        const head = table.createTHead().insertRow();
+        cells(line).forEach((c) => { const th = document.createElement("th"); renderInline(th, c); head.appendChild(th); });
+        const body = table.createTBody();
+        for (i += 2; i < lines.length && lines[i].trim().startsWith("|"); i++) {
+          const row = body.insertRow();
+          cells(lines[i]).forEach((c) => renderInline(row.insertCell(), c));
+        }
+        i--;  // the for-loop moves on to the first line after the table
+        container.appendChild(table);
+      } else if ((m = line.match(/^(#{1,3})\s+(.*)/))) {
         closeList();
         const h = document.createElement(m[1].length === 1 ? "h2" : "h3");
         renderInline(h, m[2]);
@@ -379,19 +368,38 @@
       }
     }
   }
+  // "Not published" is final; a temporary failure gets a Retry button.
+  function guideMessage(body, text, retry) {
+    body.textContent = "";
+    const p = document.createElement("p");
+    p.textContent = text;
+    body.appendChild(p);
+    if (retry) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "send";
+      b.textContent = t("retry");
+      b.addEventListener("click", loadGuide);
+      body.appendChild(b);
+    }
+  }
   async function loadGuide() {
     const body = $("guide-body");
     body.textContent = t("guideLoading");
     const requestedLang = lang;
     try {
       const res = await fetch("/api/guide?lang=" + requestedLang);
-      if (!res.ok) throw new Error();
-      const text = await res.text();
       if (requestedLang !== lang) return; // language changed while loading
-      renderGuide(body, text);
+      if (res.status === 404) {
+        const data = await res.json().catch(() => ({}));
+        guideMessage(body, data.detail || t("guideError"), false);
+        return;
+      }
+      if (!res.ok) throw new Error();
+      renderGuide(body, await res.text());
       guideLoaded = true;
     } catch {
-      if (requestedLang === lang) body.textContent = t("guideError");
+      if (requestedLang === lang) guideMessage(body, t("guideError"), true);
     }
   }
 

@@ -1,18 +1,20 @@
-"""/rooms - free classrooms right now, or at a chosen time.
+"""/rooms - free classrooms right now, or for a chosen date and interval (US3).
 
-    /rooms          the class period that is on now (or the next one)
-    /rooms 14:30    that time today
-    buttons         ◀ previous period · 🔄 Now · next period ▶, and one per day;
-                    they redraw the same message instead of sending new ones
+    /rooms                      the class period that is on now (or the next one)
+    /rooms 14:30                that time today
+    /rooms 20.10 14:00-16:00    rooms free for that WHOLE interval on that date
+    buttons                     ◀ previous period · 🔄 Now · next period ▶, and
+                                one per day; they redraw the same message
 
-The rooms themselves come from rooms.py (data/schedule.json), which the
-website's "Free rooms" tab uses too. Wired into the bot by two lines in
-telegram_bot.build_application (see register_rooms below).
+Results are grouped by building, labelled "Available according to schedule"
+and show the date of the schedule data. A loading failure offers Retry, which
+keeps the chosen interval. The rooms come from rooms.py (data/schedule.json).
 """
 from __future__ import annotations
 
 import html
 import itertools
+from datetime import datetime, timedelta
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
@@ -20,74 +22,20 @@ from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 import core
+import i18n
 import rooms
-from telegram_bot import add_command, render_chunks, user_lang
+from telegram_bot import add_command, render_chunks, retry_keyboard, user_lang
 
 # ------------------------------------------------------------------ texts ----
 
-R: dict[str, dict[str, str]] = {
-    "title": {
-        "kk": "Бос кабинеттер: {count}",
-        "ru": "Свободные аудитории: {count}",
-        "en": "Free rooms: {count}",
-    },
-    "now": {"kk": "қазір", "ru": "сейчас", "en": "now"},
-    "next": {"kk": "келесі сабақ", "ru": "следующая пара", "en": "next period"},
-    "day_over": {
-        "kk": "Бүгінгі сабақтар аяқталды, сондықтан келесі оқу күні көрсетілді.",
-        "ru": "Занятия на сегодня закончились, поэтому показан следующий учебный день.",
-        "en": "Classes are over for today, so this is the next class day.",
-    },
-    "day_off": {
-        "kk": "Бүгін сабақ жоқ, сондықтан келесі оқу күні көрсетілді.",
-        "ru": "Сегодня занятий нет, поэтому показан следующий учебный день.",
-        "en": "There are no classes today, so this is the next class day.",
-    },
-    "none": {
-        "kk": "Бұл уақытта бос кабинет жоқ.",
-        "ru": "В это время свободных аудиторий нет.",
-        "en": "No rooms are free at this time.",
-    },
-    "legend": {
-        "kk": "Жақшадағы уақыт — кабинеттегі келесі сабақтың басталуы, оған дейін кабинет бос. "
-        "Жақша болмаса, сол күні ол жерде сабақ қалмаған. Есеп тек сабақ кестесі бойынша.",
-        "ru": "Время в скобках — начало следующего занятия в аудитории, до него она свободна. "
-        "Без скобок — в этот день занятий там больше нет. Учитывается только расписание занятий.",
-        "en": "Time in brackets: when the next class in that room starts - it's free until then. "
-        "No brackets: no more classes there that day. Based on the class schedule only.",
-    },
-    "bad_time": {
-        "kk": "Уақытты былай жазыңыз: /rooms 14:30 (сабақтар {first}–{last} аралығында).",
-        "ru": "Укажите время так: /rooms 14:30 (занятия идут с {first} до {last}).",
-        "en": "Write the time like this: /rooms 14:30 (classes run {first}–{last}).",
-    },
-    "btn_now": {"kk": "🔄 Қазір", "ru": "🔄 Сейчас", "en": "🔄 Now"},
-}
+R: dict[str, dict[str, str]] = i18n.by_key("rooms")  # locales/<lang>.json, section "rooms"
 
-MENU = {"kk": "Бос кабинеттер", "ru": "Свободные аудитории", "en": "Free rooms"}
-HELP_LINE = {
-    "kk": "/rooms — бос кабинеттер (немесе /rooms 14:30)",
-    "ru": "/rooms — свободные аудитории (или /rooms 14:30)",
-    "en": "/rooms — free rooms (or /rooms 14:30)",
-}
+MENU = R["menu"]
+HELP_LINE = R["help_line"]
 
 # Schedule day code -> (short name for the day buttons, full name for the heading).
 DAY_NAMES: dict[str, dict[str, tuple[str, str]]] = {
-    "kk": {
-        "Mo": ("Дс", "Дүйсенбі"), "Tu": ("Сс", "Сейсенбі"), "We": ("Ср", "Сәрсенбі"),
-        "Th": ("Бс", "Бейсенбі"), "Fr": ("Жм", "Жұма"), "Sa": ("Сн", "Сенбі"),
-        "Su": ("Жс", "Жексенбі"),
-    },
-    "ru": {
-        "Mo": ("Пн", "Понедельник"), "Tu": ("Вт", "Вторник"), "We": ("Ср", "Среда"),
-        "Th": ("Чт", "Четверг"), "Fr": ("Пт", "Пятница"), "Sa": ("Сб", "Суббота"),
-        "Su": ("Вс", "Воскресенье"),
-    },
-    "en": {
-        "Mo": ("Mo", "Monday"), "Tu": ("Tu", "Tuesday"), "We": ("We", "Wednesday"),
-        "Th": ("Th", "Thursday"), "Fr": ("Fr", "Friday"), "Sa": ("Sa", "Saturday"),
-        "Su": ("Su", "Sunday"),
-    },
+    lang: {day: tuple(names) for day, names in days.items()} for lang, days in R["day_names"].items()
 }
 
 
@@ -98,8 +46,43 @@ def t(key: str, lang: str) -> str:
 # -------------------------------------------------------------- message ----
 
 
+def _example() -> str:
+    """'/rooms 20.10 14:00-16:00' for the next class day, as a format example."""
+    day = datetime.now(rooms.CAMPUS_TZ).date() + timedelta(days=1)
+    if day.weekday() == 6:  # no classes on Sunday
+        day += timedelta(days=1)
+    return f"/rooms {day:%d.%m} 14:00-16:00"
+
+
+def _room_lines(free: list[rooms.FreeRoom]) -> list[str]:
+    """🏢 building, then one line per letter block: **F** — F101, F102 (14:30)."""
+    lines: list[str] = []
+    for building, in_building in itertools.groupby(rooms.by_building(free), key=lambda item: item.room.building):
+        lines.append(f"🏢 {building or '—'}")
+        for block, group in itertools.groupby(in_building, key=lambda item: item.room.block):
+            names = ", ".join(
+                item.room.name + (f" ({rooms.hhmm(item.until)})" if item.until is not None else "")
+                for item in group
+            )
+            lines.append(f"**{block}** — {names}" if block else names)
+    return lines
+
+
+def _results(free: list[rooms.FreeRoom], lang: str) -> list[str]:
+    """The list with its label, legend, data date and the custom-time hint."""
+    if not free:
+        lines = [t("none", lang)]
+    else:
+        lines = [t("label", lang), *_room_lines(free), "", t("legend", lang)]
+    updated = rooms.schedule_updated()
+    if updated:
+        lines.append(t("data_date", lang).format(date=f"{updated:%d.%m.%Y}"))
+    lines.append(t("custom_hint", lang).format(example=_example()))
+    return lines
+
+
 def rooms_text(view: rooms.View, free: list[rooms.FreeRoom], lang: str) -> str:
-    """The /rooms message as plain text: one line of rooms per block."""
+    """The /rooms message for one class period, as plain text."""
     lang = core.normalize_lang(lang)
     when = f"🕒 {DAY_NAMES[lang][view.day][1]}, {rooms.hhmm(view.slot.start)}–{rooms.hhmm(view.slot.end)}"
     if view.status in ("now", "next"):
@@ -107,19 +90,45 @@ def rooms_text(view: rooms.View, free: list[rooms.FreeRoom], lang: str) -> str:
     lines = [f"🚪 **{t('title', lang).format(count=len(free))}**", when]
     if view.status in ("day_over", "day_off"):
         lines.append(t(view.status, lang))
-    lines.append("")
+    return "\n".join(lines + [""] + _results(free, lang))
 
-    if not free:
-        lines.append(t("none", lang))
-        return "\n".join(lines)
-    for block, group in itertools.groupby(free, key=lambda item: item.room.block):
-        names = ", ".join(
-            item.room.name + (f" ({rooms.hhmm(item.until)})" if item.until is not None else "")
-            for item in group
-        )
-        lines.append(f"**{block}** — {names}" if block else names)
-    lines += ["", t("legend", lang)]
-    return "\n".join(lines)
+
+def search_text(search: rooms.Search, free: list[rooms.FreeRoom], lang: str) -> str:
+    """The /rooms message for a student's own date and interval, as plain text."""
+    lang = core.normalize_lang(lang)
+    when = (
+        f"🗓 {DAY_NAMES[lang][search.day][1]}, {search.date:%d.%m.%Y}, "
+        f"{rooms.hhmm(search.start)}–{rooms.hhmm(search.end)}"
+    )
+    lines = [f"🚪 **{t('title', lang).format(count=len(free))}**", when, ""]
+    return "\n".join(lines + _results(free, lang))
+
+
+def search_error_text(key: str, search: rooms.Search | None, lang: str) -> str:
+    """invalid · past · hours · no_classes, each with what to do instead."""
+    if key == "hours":
+        slots = rooms.load_schedule().slots
+        return t("hours", lang).format(first=rooms.hhmm(slots[0].start), last=rooms.hhmm(slots[-1].end))
+    if key == "no_classes" and search is not None:
+        return t("no_classes", lang).format(date=f"{search.date:%d.%m.%Y}")
+    return t(key if key in ("invalid", "past") else "invalid", lang).format(example=_example())
+
+
+def search_message(search: rooms.Search, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
+    """Telegram HTML and buttons for an interval search (or its error)."""
+    try:
+        rooms.check_search(search)
+        free = rooms.free_rooms_between(search.day, search.start, search.end)
+        text = search_text(search, free, lang)
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_now", lang), callback_data="rooms:now")]])
+    except rooms.ScheduleError as exc:
+        print(f"[rooms] schedule: {exc}")
+        # Retry keeps the student's date and interval.
+        return html.escape(core.msg("schedule_missing", lang)), retry_keyboard(f"roomsq:{search.code()}", lang)
+    except rooms.SearchError as exc:
+        text, markup = search_error_text(exc.key, search, lang), None
+    chunks = render_chunks(text)
+    return (chunks[0] if len(chunks) == 1 else chunks[0] + "\n…"), markup
 
 
 def rooms_button(label: str, day: str, slot: rooms.Slot) -> InlineKeyboardButton:
@@ -171,14 +180,29 @@ def view_from_button(data: str) -> rooms.View:
 
 
 async def cmd_rooms(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Free classrooms right now, or at the time given: /rooms 14:30."""
+    """Free classrooms now, at a time (/rooms 14:30) or for an interval
+    (/rooms 20.10 14:00-16:00)."""
     lang = user_lang(update, context)
+    args = " ".join(context.args or [])
     try:
-        view = rooms.pick_view(time=" ".join(context.args or []) or None)
+        search = rooms.parse_search(args)
+    except rooms.SearchError as exc:  # an invalid search is not submitted
+        await update.effective_message.reply_text(search_error_text(exc.key, None, lang))
+        return
+    if search is not None:
+        body, markup = search_message(search, lang)
+        await update.effective_message.reply_text(body, parse_mode=ParseMode.HTML, reply_markup=markup)
+        return
+    try:
+        view = rooms.pick_view(time=args or None)
         body, markup = rooms_message(view, lang)
     except rooms.ScheduleError as exc:
         print(f"[rooms] schedule: {exc}")
-        await update.effective_message.reply_text(core.msg("schedule_missing", lang))
+        today = rooms.DAYS[datetime.now(rooms.CAMPUS_TZ).weekday()]
+        retry = f"rooms:{today}:{args}" if args else "rooms:now"
+        await update.effective_message.reply_text(
+            core.msg("schedule_missing", lang), reply_markup=retry_keyboard(retry, lang)
+        )
         return
     except ValueError:  # not a time, or after the last class period
         slots = rooms.load_schedule().slots
@@ -188,8 +212,17 @@ async def cmd_rooms(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(body, parse_mode=ParseMode.HTML, reply_markup=markup)
 
 
+async def _redraw(query, body: str, markup) -> None:
+    try:
+        await query.edit_message_text(body, parse_mode=ParseMode.HTML, reply_markup=markup)
+    except TelegramError as exc:
+        if "not modified" in str(exc).lower():  # "Now" pressed and nothing has changed
+            return
+        await query.message.reply_text(body, parse_mode=ParseMode.HTML, reply_markup=markup)
+
+
 async def on_rooms_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """A day, time or "Now" button under a /rooms message: redraw it in place."""
+    """A day, time, "Now" or Retry button under a /rooms message: redraw it in place."""
     query = update.callback_query
     await query.answer()
     lang = user_lang(update, context)
@@ -197,13 +230,24 @@ async def on_rooms_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         body, markup = rooms_message(view_from_button(query.data), lang)
     except rooms.ScheduleError as exc:
         print(f"[rooms] schedule: {exc}")
-        body, markup = html.escape(core.msg("schedule_missing", lang)), None
+        body, markup = html.escape(core.msg("schedule_missing", lang)), retry_keyboard(query.data, lang)
+    await _redraw(query, body, markup)
+
+
+async def on_search_retry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Retry after a loading failure, with the same date and interval."""
+    query = update.callback_query
+    await query.answer()
+    lang = user_lang(update, context)
     try:
-        await query.edit_message_text(body, parse_mode=ParseMode.HTML, reply_markup=markup)
-    except TelegramError as exc:
-        if "not modified" in str(exc).lower():  # "Now" pressed and nothing has changed
-            return
-        await query.message.reply_text(body, parse_mode=ParseMode.HTML, reply_markup=markup)
+        search = rooms.search_from_code(query.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        search = None
+    if search is None:
+        body, markup = html.escape(search_error_text("invalid", None, lang)), None
+    else:
+        body, markup = search_message(search, lang)
+    await _redraw(query, body, markup)
 
 
 # ----------------------------------------------------------- registration ----
@@ -214,3 +258,4 @@ def register_rooms(app: Application) -> None:
     add_command("rooms", MENU, HELP_LINE)
     app.add_handler(CommandHandler(["rooms", "room"], cmd_rooms))
     app.add_handler(CallbackQueryHandler(on_rooms_chosen, pattern=r"^rooms:"))
+    app.add_handler(CallbackQueryHandler(on_search_retry, pattern=r"^roomsq:"))
