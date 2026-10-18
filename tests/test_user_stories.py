@@ -218,5 +218,112 @@ class US3RoomsFlowTests(BotHarness):
         self.assertEqual(self.last_buttons(), [[('🔄 Retry', 'rooms:now')]])
 
 
+SAMPLE_EVENTS = """# Events
+## 1. Late concert
+- Date: November 20, 2026
+- Venue: Blue Hall
+## 2. Early lecture
+- Date: November 20, 2026
+- Time: 09:00
+## 3. Cancelled fair
+- Date: November 5, 2026
+- Time: 12:00
+- Venue: Main hall
+- Status: Cancelled
+## 4. Moved workshop
+- Date: November 1, 2026
+- Status: Postponed
+- New date: December 3, 2026
+## 5. Moved talk
+- Date: November 2, 2026
+- Status: Postponed
+## 6. Secret draft
+- Date: November 10, 2026
+- Status: Draft
+"""
+
+
+class US4EventsTests(unittest.TestCase):
+    """US4 View campus events."""
+
+    def test_order_statuses_and_missing_details(self):
+        import events_bot
+        events = events_bot.parse_events(SAMPLE_EVENTS)
+        # By start date and time; a postponed event starts on its new date; no date yet -> last.
+        self.assertEqual([e.title for e in events],
+                         ['Cancelled fair', 'Early lecture', 'Late concert', 'Moved workshop', 'Moved talk'])
+        text = events_bot.render_events(SAMPLE_EVENTS, 'en', date(2026, 10, 18))
+        self.assertNotIn('Secret draft', text)
+        self.assertIn('Cancelled fair** · ❌ Cancelled', text)
+        self.assertIn('Moved workshop** · ⏸ Postponed, new date: 03.12.2026', text)
+        self.assertIn('Moved talk** · ⏸ Postponed, New date to be confirmed', text)
+        late = next(e for e in events if e.title == 'Late concert')
+        self.assertIn('🕒 To be confirmed · 📍 Blue Hall', events_bot.render_details(late, 'en', date(2026, 10, 18)))
+        early = next(e for e in events if e.title == 'Early lecture')
+        self.assertIn('🕒 09:00 · 📍 To be confirmed', events_bot.render_details(early, 'en', date(2026, 10, 18)))
+
+    def test_range_is_inclusive_and_uses_the_new_date_of_a_postponed_event(self):
+        import events_bot
+        text = events_bot.render_events(SAMPLE_EVENTS, 'en', date(2026, 10, 18), date(2026, 11, 5), date(2026, 11, 20))
+        for title in ('Cancelled fair', 'Early lecture', 'Late concert'):
+            self.assertIn(title, text)
+        for title in ('Moved workshop', 'Moved talk', 'Secret draft'):
+            self.assertNotIn(title, text)
+        self.assertIn('Moved workshop', events_bot.render_events(SAMPLE_EVENTS, 'en', date(2026, 10, 18),
+                                                                 date(2026, 12, 3), date(2026, 12, 3)))
+        self.assertEqual(events_bot.parse_range('05.11-20.11', date(2026, 10, 18)), (date(2026, 11, 5), date(2026, 11, 20)))
+        self.assertEqual(events_bot.parse_range('2026-11-05', date(2026, 10, 18)), (date(2026, 11, 5), date(2026, 11, 5)))
+        self.assertIsNone(events_bot.parse_range('', date(2026, 10, 18)))
+        for bad in ('20.11-05.11', '31.02-01.03', 'soon'):
+            with self.assertRaises(ValueError, msg=bad):
+                events_bot.parse_range(bad, date(2026, 10, 18))
+
+    def test_real_events_file(self):
+        import events_bot
+        events = events_bot.parse_events(events_bot.EVENTS_FILE.read_text(encoding='utf-8'))
+        self.assertEqual([e.date for e in events], sorted(e.date for e in events))
+        icbcb = next(e for e in events if 'ICBCB' in e.title)
+        self.assertIsNone(icbcb.time)  # not published: shown as "To be confirmed"
+        party = next(e for e in events if e.title.startswith('International Students'))
+        self.assertEqual((party.time, party.venue), ('17:30', 'program'))
+
+
+class US4EventsFlowTests(BotHarness):
+    async def test_range_details_and_messages(self):
+        import events_bot
+        await self.text('/events 09.10-15.10')
+        body = self.last_text()
+        self.assertIn('Selected dates: 09.10.2026 – 15.10.2026', body)
+        self.assertIn('Welcome Party 2026', body)
+        self.assertIn('ICBCB-2026', body)
+        self.assertNotIn('Transformation Seminar', body)
+        self.assertNotIn('SDU FEST', body)
+        buttons = self.last_buttons()[0]
+        self.assertEqual([label for label, _ in buttons], ['ℹ️ 1', 'ℹ️ 2'])
+        await self.tap(buttons[1][1])
+        details = self.last_text()
+        self.assertIn('Application (submission) deadline: September 20, 2026', details)
+        self.assertIn('does not register you', details)
+
+        await self.text('/events 15.10-09.10')
+        self.assertTrue(self.last_text().startswith('Select a start date and an end date on or after the start date.'))
+        await self.text('/events 01.01.2027-31.01.2027')
+        self.assertIn('No campus events found for the selected dates.', self.last_text())
+
+        with patch.object(events_bot, 'EVENTS_FILE', Path(self.temp.name)):  # a folder: exists, can't be read
+            await self.text('/events 09.10-15.10')
+        self.assertEqual(self.last_text(), 'Campus events are temporarily unavailable. Please try again.')
+        self.assertNotIn('No campus events found', self.last_text())
+        retry = self.last_buttons()[0][0]
+        self.assertEqual(retry[1], 'events:retry:20261009-20261015')
+        await self.tap(retry[1])  # the source is back; the chosen dates are kept
+        self.assertIn('Selected dates: 09.10.2026 – 15.10.2026', self.last_text())
+
+        with patch.object(events_bot, 'EVENTS_FILE', Path(self.temp.name) / 'missing.md'):
+            await self.text('/events')
+        self.assertEqual(self.last_text(), 'Event information has not been published yet.')
+        self.ai.assert_not_awaited()
+
+
 if __name__ == '__main__':
     unittest.main()

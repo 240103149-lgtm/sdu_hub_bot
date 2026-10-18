@@ -31,7 +31,10 @@ class DataTests(unittest.TestCase):
         self.assertEqual(result.count(' · Upcoming'), 3)
         self.assertEqual(result.count(' · Already passed'), 2)
         self.assertIn('ICBCB-2026', result)
-        self.assertIn('Application (submission) deadline: September 20', result)
+        icbcb = next(e for e in events_bot.parse_events(source) if 'ICBCB' in e.title)
+        details = events_bot.render_details(icbcb, 'en', date(2026, 10, 4))
+        self.assertIn('Application (submission) deadline: September 20', details)
+        self.assertIn(' · Upcoming', details)
         result = events_bot.render_events(source, 'kk', date(2026, 10, 9))
         self.assertIn(' · Бүгін', result)
         for chunk in telegram_bot.render_chunks(result):

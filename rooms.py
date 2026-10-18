@@ -314,7 +314,7 @@ class Search:
         return f"{self.date:%Y%m%d}:{hhmm(self.start).replace(':', '')}:{hhmm(self.end).replace(':', '')}"
 
 
-def _parse_date(value: str, today: date) -> date:
+def parse_date(value: str, today: date) -> date:
     value = value.strip()
     try:
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
@@ -348,7 +348,7 @@ def parse_search(text: str, now: datetime | None = None) -> Search | None:
     if len(tokens) < 2:
         return None
     if len(tokens) == 3:
-        when, times = _parse_date(tokens[0], today), tokens[1:]
+        when, times = parse_date(tokens[0], today), tokens[1:]
     elif len(tokens) == 2:
         when, times = today, tokens
     else:
@@ -376,4 +376,4 @@ def check_search(search: Search) -> None:
 def search_from_code(code: str) -> Search:
     """The inverse of Search.code(), for Retry buttons."""
     day, start, end = code.split(":")
-    return Search(_parse_date(day, date.today()), to_minutes(start), to_minutes(end))
+    return Search(parse_date(day, date.today()), to_minutes(start), to_minutes(end))
