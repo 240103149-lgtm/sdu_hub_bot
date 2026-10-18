@@ -114,6 +114,9 @@ class US1ChatbotTests(unittest.TestCase):
         self.assertIn('FOLLOW-UP RULE', prompt)
         self.assertIn('қалай хабарласамын?', prompt)
         self.assertIn('How to contact the administration', prompt)  # knowledge entry
+        self.assertIn('"медпункт"', prompt)  # informal names map to the official ones
+        self.assertIn('Medical Center (медпункт', prompt)
+        self.assertIn('say to use /deadline', prompt)
 
 
 class US2GuideRenderingTests(unittest.TestCase):
