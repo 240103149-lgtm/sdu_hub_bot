@@ -16,13 +16,15 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 # --------------------------------------------------------------- config ----
 
 SCHEDULE_FILE = Path(__file__).parent / "data" / "schedule.json"
+# When schedule.json was last refreshed - shown with every result (US3).
+SCHEDULE_META = Path(__file__).parent / "data" / "schedule_meta.json"
 
 # Kazakhstan has used a single time zone, UTC+5, since 1 March 2024 and has no
 # daylight saving time. A fixed offset keeps "now" right even on a server whose
@@ -243,13 +245,135 @@ def pick_view(day: str | None = None, time: str | None = None, now: datetime | N
 
 def free_rooms(view: View) -> list[FreeRoom]:
     """Rooms with no class during the view's period, in block and number order."""
+    return free_rooms_between(view.day, view.slot.start, view.slot.end)
+
+
+def free_rooms_between(day: str, start: int, end: int) -> list[FreeRoom]:
+    """Rooms free for the WHOLE interval [start, end) on that weekday.
+
+    A class that ends exactly at `start`, or starts exactly at `end`, does not
+    overlap. `until` is when the room's next class after `end` begins.
+    """
     schedule = load_schedule()
     free: list[FreeRoom] = []
     for key, room in schedule.rooms.items():
-        classes = schedule.busy.get((view.day, key), [])
-        if any(c.start < view.slot.end and view.slot.start < c.end for c in classes):
+        classes = schedule.busy.get((day, key), [])
+        if any(c.start < end and start < c.end for c in classes):
             continue
-        until = min((c.start for c in classes if c.start >= view.slot.end), default=None)
+        until = min((c.start for c in classes if c.start >= end), default=None)
         free.append(FreeRoom(room, until))
     free.sort(key=lambda item: _room_order(item.room))
     return free
+
+
+def by_building(free: list[FreeRoom]) -> list[FreeRoom]:
+    """Building, then block and number - the order the results are listed in."""
+    return sorted(free, key=lambda item: (item.room.building, _room_order(item.room)))
+
+
+def schedule_updated() -> date | None:
+    """The date schedule.json was last refreshed, from data/schedule_meta.json."""
+    try:
+        meta = json.loads(SCHEDULE_META.read_text(encoding="utf-8"))
+        return date.fromisoformat(str(meta["updated"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+# ------------------------------------------------- a student's own interval ----
+
+
+class SearchError(ValueError):
+    """A search the bot cannot answer. `key` names the message to show:
+
+        invalid      not a date / time, or the end is not after the start
+        past         the date is before today
+        hours        outside the hours of the class schedule
+        no_classes   the schedule has no classes that weekday (e.g. Sunday)
+    """
+
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
+@dataclass(frozen=True)
+class Search:
+    """US3: "select a date, start time and end time" - minutes since midnight."""
+
+    date: date
+    start: int
+    end: int
+
+    @property
+    def day(self) -> str:
+        return DAYS[self.date.weekday()]
+
+    def code(self) -> str:
+        """Compact form for a button: '20261020:1400:1600'."""
+        return f"{self.date:%Y%m%d}:{hhmm(self.start).replace(':', '')}:{hhmm(self.end).replace(':', '')}"
+
+
+def _parse_date(value: str, today: date) -> date:
+    value = value.strip()
+    try:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            return date.fromisoformat(value)
+        match = re.fullmatch(r"(\d{1,2})[./](\d{1,2})(?:[./](\d{2}|\d{4}))?", value)
+        if match:
+            day, month, year = match.groups()
+            year = int(year) + (2000 if year and len(year) == 2 else 0) if year else today.year
+            return date(year, int(month), int(day))
+        if re.fullmatch(r"\d{8}", value):  # from a button
+            return date(int(value[:4]), int(value[4:6]), int(value[6:]))
+    except ValueError:
+        pass
+    raise SearchError("invalid")
+
+
+def parse_search(text: str, now: datetime | None = None) -> Search | None:
+    """'20.10 14:00-16:00', '2026-10-20 14:00 16:00' or '14:00-16:00' (today).
+
+    Returns None for text that is not an interval - nothing, or one time such
+    as '14:30', which keeps meaning "the class period at that time".
+    Raises SearchError for an interval the bot cannot answer.
+    """
+    today = (now or datetime.now(timezone.utc)).astimezone(CAMPUS_TZ).date()
+    tokens: list[str] = []
+    for token in text.split():
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", token):  # an ISO date keeps its dashes
+            tokens.append(token)
+        else:  # "14:00-16:00", "14:00–16:00", "-"
+            tokens += [part for part in re.split(r"[-–—]", token) if part]
+    if len(tokens) < 2:
+        return None
+    if len(tokens) == 3:
+        when, times = _parse_date(tokens[0], today), tokens[1:]
+    elif len(tokens) == 2:
+        when, times = today, tokens
+    else:
+        raise SearchError("invalid")
+    try:
+        start, end = to_minutes(times[0]), to_minutes(times[1])
+    except ValueError:
+        raise SearchError("invalid") from None
+    if end <= start:
+        raise SearchError("invalid")
+    if when < today:
+        raise SearchError("past")
+    return Search(when, start, end)
+
+
+def check_search(search: Search) -> None:
+    """Raise SearchError when the schedule cannot say anything about it."""
+    schedule = load_schedule()
+    if search.day not in schedule.days:
+        raise SearchError("no_classes")
+    if search.start < schedule.slots[0].start or search.end > schedule.slots[-1].end:
+        raise SearchError("hours")
+
+
+def search_from_code(code: str) -> Search:
+    """The inverse of Search.code(), for Retry buttons."""
+    day, start, end = code.split(":")
+    return Search(_parse_date(day, date.today()), to_minutes(start), to_minutes(end))

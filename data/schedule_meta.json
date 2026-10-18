@@ -1,0 +1,5 @@
+{
+  "about": "Where data/schedule.json comes from. When the schedule file is replaced, update 'updated' too: /rooms shows it as the date of the schedule data (US3).",
+  "source": "Class schedule exported from the SDU student portal (my.sdu.edu.kz)",
+  "updated": "2026-10-04"
+}

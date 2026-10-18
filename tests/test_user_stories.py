@@ -20,7 +20,18 @@ sys.path.insert(0, str(Path(__file__).parent))
 from harness import BotHarness  # noqa: E402
 
 import core  # noqa: E402
+import rooms  # noqa: E402
 import telegram_bot  # noqa: E402
+
+from datetime import date, datetime, timedelta, timezone  # noqa: E402
+
+
+def next_weekday(weekday):
+    """The next date (after today, campus time) that falls on `weekday` (0 = Monday)."""
+    day = datetime.now(rooms.CAMPUS_TZ).date() + timedelta(days=1)
+    while day.weekday() != weekday:
+        day += timedelta(days=1)
+    return day
 
 
 class US1ChatbotTests(unittest.TestCase):
@@ -122,6 +133,89 @@ class US2GuideFlowTests(BotHarness):
         self.assertIn('Инструкция для этого семестра', missing.json()['detail'])
         self.assertEqual(broken.status_code, 503)
         self.assertEqual(ok.status_code, 200)
+
+
+class US3IntervalTests(unittest.TestCase):
+    """US3 Find available classrooms: a date, a start time and an end time."""
+
+    NOW = datetime(2026, 10, 18, 10, 0, tzinfo=timezone.utc)  # Sunday, 15:00 in Almaty
+
+    def test_search_formats_and_invalid_input(self):
+        tuesday = date(2026, 10, 20)
+        for text in ('20.10 14:00-16:00', '2026-10-20 14:00 16:00', '20.10.2026 14:00 – 16:00'):
+            self.assertEqual(rooms.parse_search(text, self.NOW), rooms.Search(tuesday, 840, 960), text)
+        self.assertEqual(rooms.parse_search('14:00-16:00', self.NOW).date, date(2026, 10, 18))
+        for text in ('', '14:30'):  # not an interval: the class-period view, as before
+            self.assertIsNone(rooms.parse_search(text, self.NOW))
+        for text, key in (('20.10 16:00-14:00', 'invalid'), ('20.10 14:00-14:00', 'invalid'),
+                          ('31.02 10:00-11:00', 'invalid'), ('20.10 14:00', 'invalid'), ('17.10 14:00-16:00', 'past')):
+            with self.assertRaises(rooms.SearchError, msg=text) as error:
+                rooms.parse_search(text, self.NOW)
+            self.assertEqual(error.exception.key, key)
+        search = rooms.Search(tuesday, 840, 960)
+        self.assertEqual(rooms.search_from_code(search.code()), search)
+
+    def test_only_rooms_free_for_the_whole_interval(self):
+        schedule = rooms.parse_schedule([
+            {'day': 'Tu', 'start': '12:30', 'end': '14:00', 'room': 'A 101', 'building': 'Main'},    # ends at start
+            {'day': 'Tu', 'start': '16:00', 'end': '17:00', 'room': 'A 102', 'building': 'Main'},    # starts at end
+            {'day': 'Tu', 'start': '15:30', 'end': '16:20', 'room': 'A 103', 'building': 'Main'},    # overlaps the end
+            {'day': 'Tu', 'start': '13:30', 'end': '14:20', 'room': 'B 201', 'building': 'Law'},     # overlaps the start
+            {'day': 'Tu', 'start': '08:30', 'end': '22:20', 'room': 'C 301', 'building': 'Main'},
+            {'day': 'Mo', 'start': '14:30', 'end': '15:20', 'room': 'B 202', 'building': 'Law'},     # another day
+        ])
+        with patch.object(rooms, 'load_schedule', return_value=schedule):
+            free = rooms.free_rooms_between('Tu', 840, 960)
+            self.assertEqual([item.room.name for item in free], ['A 101', 'A 102', 'B 202'])
+            self.assertEqual({item.room.name: item.until for item in free}, {'A 101': None, 'A 102': 960, 'B 202': None})
+            rooms.check_search(rooms.Search(date(2026, 10, 20), 840, 960))
+            for search, key in ((rooms.Search(date(2026, 10, 25), 840, 960), 'no_classes'),
+                                (rooms.Search(date(2026, 10, 20), 420, 540), 'hours')):
+                with self.assertRaises(rooms.SearchError) as error:
+                    rooms.check_search(search)
+                self.assertEqual(error.exception.key, key)
+
+
+class US3RoomsFlowTests(BotHarness):
+    async def test_interval_result_lists_building_label_interval_and_data_date(self):
+        tuesday = next_weekday(1)
+        await self.text(f'/rooms {tuesday:%d.%m} 14:00-16:00')
+        body = self.last_text()
+        self.assertIn(f'Tuesday, {tuesday:%d.%m.%Y}, 14:00–16:00', body)
+        self.assertIn('✅ Available according to schedule', body)
+        self.assertIn('🏢 Main building - Engineering block', body)
+        self.assertIn('Schedule data as of 04.10.2026', body)
+        schedule = rooms.load_schedule()
+        for name in [line for line in body.split('\n') if line.startswith('<b>')]:
+            for room in name.split('— ', 1)[1].split(', '):
+                key = rooms.room_key(room.split(' (')[0])
+                busy = schedule.busy.get(('Tu', key), [])
+                self.assertFalse(any(c.start < 960 and 840 < c.end for c in busy), room)
+
+    async def test_invalid_search_is_not_submitted(self):
+        await self.text('/rooms 20.10 16:00-14:00')
+        self.assertTrue(self.last_text().startswith('Select a date and an end time later than the start time.'))
+        await self.text(f'/rooms {next_weekday(6):%d.%m} 14:00-16:00')
+        self.assertIn('There are no classes in the schedule on', self.last_text())
+
+    async def test_no_rooms_and_loading_failure_are_different(self):
+        tuesday = next_weekday(1)
+        with patch.object(rooms, 'free_rooms_between', return_value=[]):
+            await self.text(f'/rooms {tuesday:%d.%m} 14:00-16:00')
+        self.assertIn('No classrooms available for the selected time.', self.last_text())
+        self.assertNotIn('temporarily unavailable', self.last_text())
+
+        with patch.object(rooms, 'load_schedule', side_effect=rooms.ScheduleError('missing')):
+            await self.text(f'/rooms {tuesday:%d.%m} 14:00-16:00')
+        self.assertEqual(self.last_text(), 'Classroom availability is temporarily unavailable. Please try again.')
+        retry = self.last_buttons()[0][0]
+        self.assertEqual(retry, ('🔄 Retry', f'roomsq:{tuesday:%Y%m%d}:1400:1600'))
+        await self.tap(retry[1])  # the data is back: same date and interval
+        self.assertIn(f'{tuesday:%d.%m.%Y}, 14:00–16:00', self.last_edit())
+
+        with patch.object(rooms, 'load_schedule', side_effect=rooms.ScheduleError('missing')):
+            await self.text('/rooms')
+        self.assertEqual(self.last_buttons(), [[('🔄 Retry', 'rooms:now')]])
 
 
 if __name__ == '__main__':
