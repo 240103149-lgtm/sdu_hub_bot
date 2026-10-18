@@ -75,6 +75,29 @@ class US1ChatbotTests(unittest.TestCase):
         self.assertIn('"У меня нет этой информации, пожалуйста, обратитесь в администрацию."', prompts[1])
         self.assertIn('Answer ONLY using the knowledge base below', prompts[0])
 
+    def test_kazakh_typed_without_kazakh_letters_is_answered_in_kazakh(self):
+        cases = {
+            'Медпунктте не бар?': 'kk',  # was answered in Russian
+            'Медпунктке калай барамын?': 'kk',
+            'Справка алу керек': 'kk',
+            'Грантта окимын 70 балдан аспай калсам не болады': 'kk',
+            'Общага бар ма': 'kk',
+            'FX қашан?': 'kk',
+            'Где находится медпункт?': 'ru',
+            'В медпункте есть врач?': 'ru',
+            'Не делать если не сдал?': 'ru',
+            'Можно ли пересдать FX?': 'ru',
+            'How do I get a transcript?': 'en',
+        }
+        for question, expected in cases.items():
+            for ui in ('kk', 'ru', 'en'):
+                with self.subTest(question=question, ui=ui):
+                    self.assertEqual(core.detect_lang(question, ui), expected)
+        # One word that is the same in both languages follows the chosen bot language.
+        self.assertEqual(core.detect_lang('Медпункт', 'kk'), 'kk')
+        self.assertEqual(core.detect_lang('Медпункт', 'ru'), 'ru')
+        self.assertEqual(core.detect_lang('Медпункт', 'en'), 'ru')
+
     def test_fallback_tells_whom_to_contact(self):
         replies = iter([
             'Менде бұл ақпарат жоқ, әкімшілікке хабарласыңыз.',

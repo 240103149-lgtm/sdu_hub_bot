@@ -106,10 +106,43 @@ def msg(key: str, lang: str) -> str:
 
 
 KAZAKH_LETTERS = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
-KAZAKH_WORDS = (
-    "қашан", "қайда", "қалай", "қандай", "қанша", "кашан", "кайда", "калай",
-    "бар ма", "болады", "болды", "ма?", "ме?", "сәлем", "рахмет", "туралы",
-)
+# Phrases that only Kazakh uses, also when typed without the Kazakh letters.
+KAZAKH_PHRASES = ("бар ма", "бар ме", "ма?", "ме?", "ба?", "бе?", "па?", "пе?")
+# Whole words. Many Kazakh students type without ә/ғ/қ/ң/ө/ұ/ү/һ/і, so the
+# "flat" spellings (калай, кашан, жок ...) are listed too.
+KAZAKH_WORDS = frozenset("""
+    ма ме ба бе па пе бар жок керек болады бола болса болмайды мен сен биз сиз
+    олар неше нешеде кашан калай кайда кандай канша ким кимге кимнен айтшы айтыныз
+    берши берш бериниз туралы жане ушин деген кейин бурын иа ия рахмет салем
+    алу алам аламын барам барамын барсам болсам калсам керекпе ашылады жабылады
+    кашаннан кайдан неге
+""".split())
+# Endings of Kazakh verbs and nouns that Russian words do not have.
+KAZAKH_ENDINGS = ("мын", "мыз", "пын", "бын", "сыз", "ныз", "сиз", "низ", "лары", "дары", "тары")
+RUSSIAN_WORDS = frozenset("""
+    что как где когда какой какая какое какие каком сколько почему зачем куда
+    откуда кто чем есть ли это этот эта эти мне меня мой моя мои можно нужно надо
+    или если чтобы для при про после из от на в во и с со у к по о об за я вы ты
+    он она они мы нет да уже еще ещё тоже также только будет был была было быть
+    могу хочу скажи скажите подскажите пожалуйста здравствуйте привет спасибо
+    находится работает получить сдать открыт открывается делать сдал сдала
+""".split())
+WORD_RE = re.compile(r"[a-zа-яёәғқңөұүһі]+")
+
+
+def _kazakh_or_russian(lowered: str, default: str) -> str:
+    """Cyrillic text without Kazakh letters: weigh Kazakh against Russian markers."""
+    words = WORD_RE.findall(lowered)
+    kk = sum(2 for w in words if w in KAZAKH_WORDS)
+    kk += sum(1 for w in words if len(w) > 4 and w.endswith(KAZAKH_ENDINGS))
+    kk += sum(2 for phrase in KAZAKH_PHRASES if phrase in lowered)
+    ru = sum(2 for w in words if w in RUSSIAN_WORDS)
+    ru += sum(1 for ch in lowered if ch in "ёъ")
+    if kk != ru:
+        return "kk" if kk > ru else "ru"
+    # Nothing tells them apart (e.g. just "Медпункт"): keep the language the
+    # student chose in the bot, or Russian if they never chose kk/ru.
+    return default if default in ("kk", "ru") else "ru"
 
 
 def detect_lang(text: str, default: str = DEFAULT_LANG) -> str:
@@ -117,21 +150,21 @@ def detect_lang(text: str, default: str = DEFAULT_LANG) -> str:
 
     Decided in code (not by the model) so the answer always follows the
     language the question was written in. `default` (the interface language)
-    is used only when the text has no letters to judge by.
+    breaks ties: Cyrillic text that could be either Kazakh or Russian, and
+    text with no letters to judge by.
     """
     sample = text or ""
     lowered = sample.lower()
-    cyr = sum(1 for ch in sample if "а" <= ch.lower() <= "я" or ch.lower() == "ё" or ch in KAZAKH_LETTERS)
-    lat = sum(1 for ch in sample if "a" <= ch.lower() <= "z")
-    if any(ch in KAZAKH_LETTERS for ch in sample) or (
-        cyr and any(word in lowered for word in KAZAKH_WORDS)
-    ):
+    default = normalize_lang(default)
+    cyr = sum(1 for ch in lowered if "а" <= ch <= "я" or ch == "ё" or ch in KAZAKH_LETTERS)
+    lat = sum(1 for ch in lowered if "a" <= ch <= "z")
+    if any(ch in KAZAKH_LETTERS for ch in sample):
         return "kk"
     if cyr >= 3 and cyr * 2 >= lat:
-        return "ru"
+        return _kazakh_or_russian(lowered, default)
     if lat >= 2:
         return "en"
-    return normalize_lang(default)
+    return default
 
 
 class AssistantError(Exception):
