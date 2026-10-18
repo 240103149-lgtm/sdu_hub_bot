@@ -206,6 +206,31 @@ def load_catalog() -> Catalog:
     return _catalog_cache[2]
 
 
+def knowledge_text(catalog: Catalog) -> str:
+    """The checklist as text for the AI knowledge base (core.load_knowledge).
+
+    Built from the same file as /documents, so the chat answer about
+    "which documents do I need" can never disagree with the checklist.
+    """
+    def names(doc: DocType) -> str:
+        return " / ".join(dict.fromkeys(doc.label(lang) for lang in ("en", "kk", "ru")))
+
+    lines = [
+        "# Documents for Bachelor's enrollment at SDU (құжаттар тізімі / список документов)",
+        f"Source: {catalog.source} - checked {catalog.checked}. This is the same list as the"
+        " bot's /documents checklist. Names are in English / Kazakh / Russian.",
+    ]
+    for track in catalog.tracks:
+        title = " / ".join(dict.fromkeys(catalog.track_name(track, lang) for lang in ("en", "kk", "ru")))
+        lines += ["", f"## {title}", "Required:"]
+        lines += [f"{i}. {names(doc)}" for i, doc in enumerate(catalog.required(track), 1)]
+        optional = [doc for doc in catalog.for_track(track) if not doc.required]
+        if optional:
+            lines.append("Only when it applies:")
+            lines += [f"- {names(doc)} - {doc.condition('en')}" for doc in optional]
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------- validation rules ----
 
 

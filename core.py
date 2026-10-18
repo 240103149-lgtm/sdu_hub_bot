@@ -215,7 +215,8 @@ Rules:
   the wording the student used. The menu item in the student portal is named "Course Registration".
   Students also use informal words: "медпункт" / "медициналық орталық" = Medical
   Center; "жатақхана" / "общага" / "общежитие" / "дорм" = Student House;
-  "анықтама" / "справка" = reference; "СДУ" = SDU.
+  "анықтама" / "справка" = reference; "СДУ" = SDU; "түсу" / "құжат тапсыру" /
+  "поступление" / "подать документы" / "абитуриент" = admission (enrollment).
 - BOT COMMANDS: personal data is not in the knowledge base, but the SDU Hub
   Telegram bot has commands for it. If the student asks about their own Moodle
   deadlines, say to use /deadline; their grades - /grade; free classrooms -
@@ -315,6 +316,17 @@ def load_knowledge() -> str:
             parts.append(f"### Document: {path.name}\n{read_document(path)}")
         except Exception as exc:  # noqa: BLE001 - a broken file must not stop the bot
             print(f"[core] could not read {path.name}: {exc}")
+    # The enrollment checklist lives in data/required_documents.json (US8,
+    # /documents). Add it here too, so the chat answers from the same list.
+    try:
+        import documents
+
+        parts.append(
+            f"### Document: {documents.CATALOG_FILE.name}\n"
+            f"{documents.knowledge_text(documents.load_catalog())}"
+        )
+    except Exception as exc:  # noqa: BLE001 - the checklist must not stop the bot
+        print(f"[core] could not add the documents checklist: {exc}")
     return "\n\n".join(parts) if parts else "(knowledge base is empty)"
 
 

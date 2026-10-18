@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from harness import BotHarness  # noqa: E402
 
 import core  # noqa: E402
+import documents  # noqa: E402
 import rooms  # noqa: E402
 import telegram_bot  # noqa: E402
 
@@ -97,6 +98,17 @@ class US1ChatbotTests(unittest.TestCase):
         self.assertEqual(core.detect_lang('Медпункт', 'kk'), 'kk')
         self.assertEqual(core.detect_lang('Медпункт', 'ru'), 'ru')
         self.assertEqual(core.detect_lang('Медпункт', 'en'), 'ru')
+
+    def test_knowledge_has_the_admission_checklist_from_the_documents_file(self):
+        knowledge = core.load_knowledge()
+        catalog = documents.load_catalog()
+        self.assertIn('### Document: required_documents.json', knowledge)
+        for doc in catalog.documents:  # every /documents item is in the chat knowledge too
+            self.assertIn(doc.label('kk'), knowledge)
+            self.assertIn(doc.label('en'), knowledge)
+        self.assertIn('First-semester tuition payment receipt', knowledge)
+        self.assertIn('admissions@sdu.edu.kz', knowledge)  # knowledge/sdu_admission.md
+        self.assertIn('6 copies', knowledge)
 
     def test_fallback_tells_whom_to_contact(self):
         replies = iter([
