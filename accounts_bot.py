@@ -2,6 +2,8 @@
 
 Switching /grade <-> /deadline ends the previous login. Other bot commands
 also end it, then run normally. Passwords never reach the AI text handler.
+/documents (US8) uses the same portal sign-in when the portal isn't linked
+yet, and opens the document checklist as soon as the sign-in succeeds.
 """
 from __future__ import annotations
 
@@ -11,10 +13,16 @@ import time
 from telegram.ext import CommandHandler, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 
 import deadline_bot as deadline
+import documents_bot as docs
 import grade_bot as grade
 import telegram_bot as bot
 
 FLOW_TTL = 600
+
+
+def texts_for(feature):
+    """The module whose t() words the sign-in messages of this feature."""
+    return {"deadline": deadline, "documents": docs}.get(feature, grade)
 
 
 async def clear_login(update, context):
@@ -41,17 +49,20 @@ def entry(feature, callback):
 def step(callback):
     @wraps(callback)
     async def run(update, context):
+        feature = context.user_data.get("login_flow", "grade")
         if time.monotonic() - context.user_data.get("login_started", 0) >= FLOW_TTL:
-            feature = context.user_data.get("login_flow", "grade")
             await clear_login(update, context)
             if update.callback_query:
                 await update.callback_query.answer()
-            module = deadline if feature == "deadline" else grade
+            module = texts_for(feature)
             await update.effective_message.reply_text(module.t("session_lost", bot.user_lang(update, context)))
             return ConversationHandler.END
         state = await callback(update, context)
         if state == ConversationHandler.END:
             await clear_login(update, context)
+            # /documents asked for the portal sign-in first: continue there once linked.
+            if feature == "documents" and context.user_data.get("portal"):
+                await docs.show_documents(update, context)
         return state
     return run
 
@@ -60,7 +71,7 @@ async def cancel(update, context):
     feature = context.user_data.get("login_flow", "grade")
     lang = bot.user_lang(update, context)
     await clear_login(update, context)
-    module = deadline if feature == "deadline" else grade
+    module = texts_for(feature)
     await update.effective_message.reply_text(module.t("cancelled", lang))
     return ConversationHandler.END
 
@@ -107,16 +118,22 @@ def register_accounts(app):
         "reset": bot.cmd_reset, "guide": bot.cmd_guide,
         "rooms": cmd_rooms, "room": cmd_rooms, "events": cmd_events,
         "unlink": grade.cmd_unlink, "unlink_moodle": deadline.cmd_unlink_moodle,
+        "review": docs.cmd_review,
     }
     app.add_handler(ConversationHandler(
         entry_points=[
             CallbackQueryHandler(menu_entry("grade", grade.cmd_grade), pattern=r"^menu:grade$"),
             CallbackQueryHandler(menu_entry("deadline", deadline.cmd_deadline), pattern=r"^menu:deadline$"),
+            CallbackQueryHandler(menu_entry("documents", docs.cmd_documents), pattern=r"^menu:documents$"),
             CommandHandler("grade", entry("grade", grade.cmd_grade), filters=private),
             CommandHandler(["deadline", "deadlines"], entry("deadline", deadline.cmd_deadline), filters=private),
+            CommandHandler("documents", entry("documents", docs.cmd_documents), filters=private),
         ],
         states={
-            grade.CHOOSE: [CallbackQueryHandler(step(grade.on_choice), pattern=r"^grade:(register|cancel)$")],
+            grade.CHOOSE: [
+                CallbackQueryHandler(step(grade.on_choice), pattern=r"^grade:(register|cancel)$"),
+                CallbackQueryHandler(step(docs.on_signin_choice), pattern=r"^docs:(signin|nosignin)$"),
+            ],
             grade.ASK_ID: [MessageHandler(only_text, step(grade.on_student_id))],
             grade.ASK_PASSWORD: [MessageHandler(only_text, step(grade.on_password))],
             grade.ASK_CODE: [MessageHandler(only_text, step(grade.on_code))],
@@ -135,7 +152,7 @@ def register_accounts(app):
     ))
     grade.register_grade(app)
     deadline.register_deadline(app)
-    app.add_handler(CommandHandler(["grade", "deadline", "deadlines"], private_only, filters=~private))
+    app.add_handler(CommandHandler(["grade", "deadline", "deadlines", "documents"], private_only, filters=~private))
     app.add_handler(CommandHandler("cancel", cancel))
     for name, menu, help_line in [
         ("unlink", {"kk": "Портал байланысын өшіру", "ru": "Отвязать портал", "en": "Unlink portal"},

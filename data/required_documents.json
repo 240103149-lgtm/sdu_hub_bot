@@ -1,0 +1,182 @@
+{
+  "about": "US8 Document Submission: the enrollment documents a new bachelor student submits. Copied from the official SDU admission page; when the admissions office changes the list, edit only this file (the bot re-reads it automatically).",
+  "source": "https://sdu.edu.kz/en/admission-3-2/",
+  "checked": "2026-10-18",
+  "max_file_mb": 10,
+  "tracks": [
+    {
+      "id": "grant",
+      "name": {"kk": "Мемлекеттік грант", "ru": "Государственный грант", "en": "State grant"}
+    },
+    {
+      "id": "paid",
+      "name": {"kk": "Ақылы оқу", "ru": "Платное обучение", "en": "Tuition-based"}
+    }
+  ],
+  "documents": [
+    {
+      "id": "application_form",
+      "tracks": ["grant", "paid"],
+      "required": true,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "Қабылдау туралы өтініш (admissions.sdu.edu.kz)",
+        "ru": "Заявление о приёме (admissions.sdu.edu.kz)",
+        "en": "Admission application form (admissions.sdu.edu.kz)"
+      },
+      "short": {"kk": "Өтініш", "ru": "Заявление", "en": "Application"}
+    },
+    {
+      "id": "school_certificate",
+      "tracks": ["grant", "paid"],
+      "required": true,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "Аттестат (қосымшасымен)",
+        "ru": "Аттестат с приложением",
+        "en": "School certificate with transcript"
+      },
+      "short": {"kk": "Аттестат", "ru": "Аттестат", "en": "School certificate"}
+    },
+    {
+      "id": "unt_certificate",
+      "tracks": ["grant", "paid"],
+      "required": true,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {"kk": "ҰБТ сертификаты", "ru": "Сертификат ЕНТ", "en": "UNT certificate"},
+      "short": {"kk": "ҰБТ сертификаты", "ru": "Сертификат ЕНТ", "en": "UNT certificate"}
+    },
+    {
+      "id": "medical_075",
+      "tracks": ["grant", "paid"],
+      "required": true,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "Медициналық анықтама (075/у нысаны)",
+        "ru": "Медицинская справка (форма 075/у)",
+        "en": "Medical certificate (Form 075)"
+      },
+      "short": {"kk": "075 анықтама", "ru": "Справка 075", "en": "Form 075"}
+    },
+    {
+      "id": "fluorography",
+      "tracks": ["grant", "paid"],
+      "required": true,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "Флюорография суреті және дәрігер қорытындысы",
+        "ru": "Флюорография с заключением врача",
+        "en": "Chest fluorography with physician's report"
+      },
+      "short": {"kk": "Флюорография", "ru": "Флюорография", "en": "Fluorography"}
+    },
+    {
+      "id": "vaccination_063",
+      "tracks": ["grant", "paid"],
+      "required": true,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "Екпе картасы (063/у нысаны)",
+        "ru": "Прививочная карта (форма 063/у)",
+        "en": "Vaccination record (Form 063)"
+      },
+      "short": {"kk": "063 екпе картасы", "ru": "Карта 063", "en": "Form 063"}
+    },
+    {
+      "id": "photo_3x4",
+      "tracks": ["grant", "paid"],
+      "required": true,
+      "formats": ["jpg", "png"],
+      "name": {"kk": "Фотосурет 3×4 см", "ru": "Фото 3×4 см", "en": "Photo 3×4 cm"},
+      "short": {"kk": "Фото 3×4", "ru": "Фото 3×4", "en": "Photo 3×4"}
+    },
+    {
+      "id": "student_fee_receipt",
+      "tracks": ["grant", "paid"],
+      "required": true,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "Студенттік алым төлемінің түбіртегі",
+        "ru": "Квитанция об оплате студенческого взноса",
+        "en": "Student fee payment receipt"
+      },
+      "short": {"kk": "Алым түбіртегі", "ru": "Взнос (квитанция)", "en": "Student fee"}
+    },
+    {
+      "id": "grant_certificate",
+      "tracks": ["grant"],
+      "required": true,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "Білім беру грантын беру туралы куәлік",
+        "ru": "Свидетельство о присуждении образовательного гранта",
+        "en": "State educational grant certificate"
+      },
+      "short": {"kk": "Грант куәлігі", "ru": "Свид. о гранте", "en": "Grant certificate"}
+    },
+    {
+      "id": "tuition_receipt",
+      "tracks": ["paid"],
+      "required": true,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "Бірінші семестрдің оқу ақысын төлеу түбіртегі",
+        "ru": "Квитанция об оплате обучения за первый семестр",
+        "en": "First-semester tuition payment receipt"
+      },
+      "short": {"kk": "1-семестр төлемі", "ru": "Оплата 1 семестра", "en": "Tuition receipt"}
+    },
+    {
+      "id": "english_certificate",
+      "tracks": ["grant", "paid"],
+      "required": false,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "IELTS немесе SDU Language School сертификаты",
+        "ru": "Сертификат IELTS или SDU Language School",
+        "en": "IELTS or SDU Language School certificate"
+      },
+      "short": {"kk": "IELTS / SDU LS", "ru": "IELTS / SDU LS", "en": "IELTS / SDU LS"},
+      "when": {"kk": "бар болса", "ru": "при наличии", "en": "if you have one"}
+    },
+    {
+      "id": "pedagogical_exam",
+      "tracks": ["grant", "paid"],
+      "required": false,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {
+        "kk": "Педагогикалық емтихан нәтижесі",
+        "ru": "Результат педагогического экзамена",
+        "en": "Pedagogical examination result"
+      },
+      "short": {"kk": "Пед. емтихан", "ru": "Пед. экзамен", "en": "Pedagogical exam"},
+      "when": {
+        "kk": "педагогикалық бағдарламаларға түсетіндер үшін",
+        "ru": "для педагогических программ",
+        "en": "for teacher education programs"
+      }
+    },
+    {
+      "id": "interview_protocol",
+      "tracks": ["paid"],
+      "required": false,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {"kk": "Әңгімелесу хаттамасы", "ru": "Протокол собеседования", "en": "Interview protocol"},
+      "short": {"kk": "Әңгімелесу", "ru": "Собеседование", "en": "Interview"},
+      "when": {"kk": "колледж түлектері үшін", "ru": "для выпускников колледжей", "en": "for college graduates"}
+    },
+    {
+      "id": "military_id",
+      "tracks": ["grant", "paid"],
+      "required": false,
+      "formats": ["pdf", "jpg", "png"],
+      "name": {"kk": "Әскери билет (көшірмесі)", "ru": "Военный билет (копия)", "en": "Military ID (copy)"},
+      "short": {"kk": "Әскери билет", "ru": "Военный билет", "en": "Military ID"},
+      "when": {
+        "kk": "мерзімді әскери қызметті өтеген болсаңыз",
+        "ru": "если вы прошли срочную службу",
+        "en": "if you have completed compulsory military service"
+      }
+    }
+  ]
+}

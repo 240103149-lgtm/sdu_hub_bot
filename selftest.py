@@ -165,6 +165,28 @@ if mode == "webhook":
 else:
     note("режим: polling", "ботты қосу:  python bot.py")
 
+# 7. ------------------------------------------------------- documents (US8) --
+section("7. Құжат тапсыру (US8)")
+import documents  # noqa: E402
+
+try:
+    catalog = documents.load_catalog()
+    report(True, "құжаттар тізімі жүктелді",
+           " · ".join(f"{track}: {len(catalog.required(track))} міндетті" for track in catalog.tracks))
+except documents.CatalogError as exc:
+    report(False, "құжаттар тізімі жүктелді", str(exc))
+try:
+    documents.store().get("selftest")
+    report(True, f"құжаттар базасы ашылды: {documents.DB_PATH}")
+except Exception as exc:  # noqa: BLE001
+    report(False, "құжаттар базасы ашылды", repr(exc))
+reviewers = os.getenv("DOCUMENTS_REVIEWER_IDS", "").strip()
+if reviewers:
+    note(f"қабылдау комиссиясы: {reviewers}")
+else:
+    note("қабылдау комиссиясы көрсетілмеген",
+         "DOCUMENTS_REVIEWER_IDS бос: тапсырылған құжаттар «тексерілуде» күйінде қалады")
+
 # ------------------------------------------------------------------- total --
 failed = [title for passed, title in results if not passed]
 print("\n" + "=" * 66)

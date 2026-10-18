@@ -16,7 +16,9 @@
           "rooms.py",
           "rooms_bot.py",
           "events_bot.py",
-          "data/**",
+          "documents.py",
+          "documents_bot.py",
+          "data/*.json",
           "static/**",
           "knowledge/**"
         ]

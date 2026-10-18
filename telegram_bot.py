@@ -81,6 +81,9 @@ BOT: dict[str, dict[str, str]] = {
             '/rooms — бос кабинеттер\n'
             'Керек уақытты да көрсетуге болады: /rooms 14:30\n'
             '\n'
+            '**🎓 Оқуға қабылдау**\n'
+            '/documents — оқуға қабылдау құжаттарын тапсыру\n'
+            '\n'
             '**⚙️ Баптаулар**\n'
             '/lang — Қазақша / Русский / English\n'
             '/help — барлық командалар мен көмек\n'
@@ -102,6 +105,9 @@ BOT: dict[str, dict[str, str]] = {
             '/events — университеттегі ивенттер\n'
             '/rooms — бос кабинеттер\n'
             'Керек уақытты да көрсетуге болады: /rooms 14:30\n'
+            '\n'
+            '**🎓 Оқуға қабылдау**\n'
+            '/documents — оқуға қабылдау құжаттарын тапсыру\n'
             '\n'
             '**⚙️ Баптаулар**\n'
             '/lang — Қазақша / Русский / English\n'
@@ -138,6 +144,9 @@ BOT: dict[str, dict[str, str]] = {
             '/rooms — свободные аудитории\n'
             'Можно указать время: /rooms 14:30\n'
             '\n'
+            '**🎓 Зачисление**\n'
+            '/documents — сдать документы для зачисления\n'
+            '\n'
             '**⚙️ Настройки**\n'
             '/lang — Қазақша / Русский / English\n'
             '/help — все команды и помощь\n'
@@ -159,6 +168,9 @@ BOT: dict[str, dict[str, str]] = {
             '/events — события университета\n'
             '/rooms — свободные аудитории\n'
             'Можно указать время: /rooms 14:30\n'
+            '\n'
+            '**🎓 Зачисление**\n'
+            '/documents — сдать документы для зачисления\n'
             '\n'
             '**⚙️ Настройки**\n'
             '/lang — Қазақша / Русский / English\n'
@@ -195,6 +207,9 @@ BOT: dict[str, dict[str, str]] = {
             '/rooms — free classrooms\n'
             'You can also choose a time: /rooms 14:30\n'
             '\n'
+            '**🎓 Enrollment**\n'
+            '/documents — submit your enrollment documents\n'
+            '\n'
             '**⚙️ Settings**\n'
             '/lang — Қазақша / Русский / English\n'
             '/help — all commands and help\n'
@@ -216,6 +231,9 @@ BOT: dict[str, dict[str, str]] = {
             '/events — university events\n'
             '/rooms — free classrooms\n'
             'You can also choose a time: /rooms 14:30\n'
+            '\n'
+            '**🎓 Enrollment**\n'
+            '/documents — submit your enrollment documents\n'
             '\n'
             '**⚙️ Settings**\n'
             '/lang — Қазақша / Русский / English\n'
@@ -391,19 +409,24 @@ async def reply(message, source: str, reply_markup: Any = None) -> None:
 HOME_BUTTONS = {
     "kk": [("deadline", "📅 Дедлайндар"), ("grade", "📊 Бағалар"),
            ("events", "🎉 Ивенттер"), ("rooms", "🚪 Бос кабинеттер"),
-           ("guide", "📚 Кесте құру"), ("lang", "🌐 Тіл")],
+           ("guide", "📚 Кесте құру"), ("documents", "📄 Құжаттар"),
+           ("lang", "🌐 Тіл")],
     "ru": [("deadline", "📅 Дедлайны"), ("grade", "📊 Оценки"),
            ("events", "🎉 События"), ("rooms", "🚪 Аудитории"),
-           ("guide", "📚 Расписание"), ("lang", "🌐 Язык")],
+           ("guide", "📚 Расписание"), ("documents", "📄 Документы"),
+           ("lang", "🌐 Язык")],
     "en": [("deadline", "📅 Deadlines"), ("grade", "📊 Grades"),
            ("events", "🎉 Events"), ("rooms", "🚪 Free rooms"),
-           ("guide", "📚 Schedule guide"), ("lang", "🌐 Language")],
+           ("guide", "📚 Schedule guide"), ("documents", "📄 Documents"),
+           ("lang", "🌐 Language")],
 }
+# grade, deadline and documents are entry points of the sign-in conversation
+# in accounts_bot, so their buttons are handled there, not by on_menu.
 MENU_PATTERN = r"^menu:(start|help|events|rooms|guide|lang)$"
 
 
 def home_keyboard(lang: str) -> InlineKeyboardMarkup:
-    """Six main actions, two per row. Callback data is language-independent."""
+    """Main actions, two per row (language last). Callback data is language-independent."""
     buttons = [InlineKeyboardButton(label, callback_data=f"menu:{action}")
                for action, label in HOME_BUTTONS[core.normalize_lang(lang)]]
     return InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
@@ -594,12 +617,14 @@ def build_application() -> Application:
         .build()
     )
     from accounts_bot import register_accounts
+    from documents_bot import register_documents
     from events_bot import register_events
     from rooms_bot import register_rooms
 
     register_accounts(app)
     register_events(app)
     register_rooms(app)
+    register_documents(app)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("lang", cmd_lang))
