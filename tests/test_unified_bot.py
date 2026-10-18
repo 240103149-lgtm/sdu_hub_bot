@@ -180,7 +180,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(c.command, c.description) for c in commands], telegram_bot.COMMAND_LABELS['en'])
         self.assertEqual([c.kwargs['language_code'] for c in self.delete_commands.call_args_list], ['kk', 'ru'])
 
-    async def test_start_has_localized_overview_and_six_buttons(self):
+    async def test_start_has_localized_overview_and_seven_buttons(self):
         for lang, heading in [('kk', '📚 Оқу'), ('ru', '📚 Учёба'), ('en', '📚 Study')]:
             self.app.user_data[42]['lang'] = lang
             await self.update('/start')
@@ -188,11 +188,13 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('SDU Hub', sent['text'])
             self.assertIn(heading, sent['text'])
             self.assertIn('/deadline', sent['text'])
+            self.assertIn('/documents', sent['text'])
             self.assertNotIn('/unlink', sent['text'])
             keyboard = sent['reply_markup'].inline_keyboard
-            self.assertEqual([len(row) for row in keyboard], [2, 2, 2])
+            self.assertEqual([len(row) for row in keyboard], [2, 2, 2, 1])
             self.assertEqual([b.callback_data for row in keyboard for b in row],
-                             ['menu:deadline', 'menu:grade', 'menu:events', 'menu:rooms', 'menu:guide', 'menu:lang'])
+                             ['menu:deadline', 'menu:grade', 'menu:events', 'menu:rooms', 'menu:guide',
+                              'menu:documents', 'menu:lang'])
         self.ai.assert_not_awaited()
 
     async def test_menu_events_rooms_and_guide_work_without_commands(self):
