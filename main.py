@@ -130,10 +130,18 @@ def chat(req: ChatRequest):
 
 @app.get("/api/guide", response_class=PlainTextResponse)
 def guide(lang: str = "kk"):
-    """US3: the registration guide for the requested language."""
+    """US2: the registration guide for the requested language.
+
+    404: not published for this semester; 503: temporarily unreadable (the
+    page then offers Retry).
+    """
     lang = core.normalize_lang(lang, default="kk")
-    text = core.load_guide(lang)
-    if text is None:
+    try:
+        text = core.load_guide(lang)
+    except core.GuideError as exc:
+        print(f"[main] registration guide: {exc}")
+        raise HTTPException(status_code=503, detail=core.msg("guide_error", lang))
+    if text is None or not text.strip():
         raise HTTPException(status_code=404, detail=core.msg("guide_missing", lang))
     return text
 

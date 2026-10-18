@@ -259,16 +259,24 @@ def load_knowledge() -> str:
     return "\n\n".join(parts) if parts else "(knowledge base is empty)"
 
 
+class GuideError(Exception):
+    """The guide exists but could not be read: a temporary failure (US2 Retry)."""
+
+
 def load_guide(lang: str) -> str | None:
-    """US3: the registration guide for one language, or None if not published.
+    """US2: the registration guide for one language, or None if not published.
 
     Uses knowledge/registration_guide.<lang>.md when it exists, otherwise the
-    default knowledge/registration_guide.md.
+    default knowledge/registration_guide.md. Raises GuideError when the file
+    is there but cannot be read.
     """
     lang = normalize_lang(lang, default="kk")
     for path in (KNOWLEDGE_DIR / f"registration_guide.{lang}.md", GUIDE_FILE):
         if path.exists():
-            return path.read_text(encoding="utf-8")
+            try:
+                return path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                raise GuideError(f"{path.name} could not be read: {exc}") from exc
     return None
 
 

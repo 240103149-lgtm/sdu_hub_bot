@@ -10,7 +10,8 @@
     "no_answer": "I couldn't produce an answer. Try rephrasing your question.",
     "not_found": "I don't have this information, please contact the administration.",
     "schedule_missing": "The class schedule is unavailable. Please try again later.",
-    "guide_missing": "The guide has not been published yet. Please contact the Registrar's office."
+    "guide_missing": "Guide not available for this semester. Please contact the Registrar's office.",
+    "guide_error": "Registration guide is temporarily unavailable. Please try again."
   },
   "bot": {
     "start": "Hi, {name}! 👋\n\nI'm **SDU Hub**, your student-life assistant. I can help you check deadlines, find a free room and discover campus events.\n\n**📚 Study**\n/deadline — Moodle assignment deadlines\n/grade — your grades\n/guide — how to create your course schedule\n\n**🏫 Campus**\n/events — university events\n/rooms — free classrooms\nYou can also choose a time: /rooms 14:30\n\n**🎓 Enrollment**\n/documents — submit your enrollment documents\n\n**⚙️ Settings**\n/lang — Қазақша / Русский / English\n/help — all commands and help\n\n💬 Have a question? Just type it:\n“How do I create my schedule?”\n\nChoose a button below to get started 👇",
@@ -19,6 +20,7 @@
     "lang_set": "Language switched to English. Go ahead and ask.",
     "reset": "Conversation history cleared. You can ask a new question.",
     "portal": "🔗 Open the registration portal",
+    "btn_retry": "🔄 Retry",
     "not_text": "I only understand text for now. Please type your question.",
     "default_name": "student"
   },
@@ -264,6 +266,7 @@
     "offline": "Couldn't reach the server. Check that the server is running in the terminal.",
     "unknownError": "An unknown error occurred.",
     "guideLoading": "Loading…",
-    "guideError": "Couldn't load the guide. Check that knowledge/registration_guide.md exists and refresh the page."
+    "guideError": "Registration guide is temporarily unavailable. Please try again.",
+    "retry": "Retry"
   }
 }

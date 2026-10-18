@@ -48,7 +48,9 @@ import i18n
 TELEGRAM_LIMIT = 4000
 TYPING_REFRESH = 4  # seconds; Telegram's "typing…" indicator lasts about 5
 
-PORTAL_URL = os.getenv("REGISTRATION_PORTAL_URL", "").strip()
+# US2: "provide the university registration portal link". Course registration
+# happens on my.sdu.edu.kz (see the guide), so that is the default.
+PORTAL_URL = os.getenv("REGISTRATION_PORTAL_URL", "").strip() or "https://my.sdu.edu.kz/"
 
 # Vercel's filesystem is read-only except /tmp, and /tmp is wiped between
 # cold starts - so per-user language/history won't *persist* there, but at
@@ -98,30 +100,62 @@ def tg_len(source: str) -> int:
     return len(source.encode("utf-16-le")) // 2
 
 
+MD_ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|>~])")        # Add \- Drop -> Add - Drop
+MD_LINK = re.compile(r"\[([^\[\]\n]+)\]\((https?://[^\s()]+)\)")   # [text](https://...)
+TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")  # | :--- | :--- |
+
+
+def _cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|") if cell.strip()]
+
+
+def tables_to_lines(source: str) -> str:
+    """Markdown tables, which Telegram cannot show, as lines it can:
+    the header row in bold, then one bullet per row - "• a — b — c"."""
+    lines, out, i = source.split("\n"), [], 0
+    while i < len(lines):
+        following = lines[i + 1] if i + 1 < len(lines) else ""
+        if lines[i].lstrip().startswith("|") and "|" in following and TABLE_RULE.match(following):
+            header = [cell.replace("**", "") for cell in _cells(lines[i])]
+            out.append(f"**{' · '.join(header)}**")
+            i += 2
+            while i < len(lines) and lines[i].lstrip().startswith("|"):
+                if _cells(lines[i]):
+                    out.append("• " + " — ".join(_cells(lines[i])))
+                i += 1
+        else:
+            out.append(lines[i])
+            i += 1
+    return "\n".join(out)
+
+
 def render_line(source: str) -> str | None:
     """One plain-text line as self-contained Telegram HTML, or None to drop it.
 
-    The text may contain **bold**, `- ` bullets and `# ` headings. Escaping
-    happens before the bold conversion, so nothing in the content can be
-    mistaken for a tag - and because bold never spans a line break, splitting
-    a long answer at line boundaries can never leave a tag unclosed.
+    The text may contain **bold**, [links](https://...), `- ` bullets, `# `
+    headings and Markdown escapes such as `\\-`. Escaping happens before the
+    tags are made, so nothing in the content can be mistaken for a tag - and
+    because no tag spans a line break, splitting a long answer at line
+    boundaries can never leave a tag unclosed.
     """
     line = source.rstrip()
     if line.lstrip().startswith("<!--"):  # markdown comments in the guide
         return None
     heading = re.match(r"^\s*#{1,6}\s+(.*)$", line)
-    if heading:
-        line = f"**{heading.group(1).strip()}**"
+    if heading:  # "# **Overview**" -> one bold heading, not "**Overview**" in bold
+        line = f"**{heading.group(1).strip().replace('**', '')}**"
     elif re.fullmatch(r"\s*([-*_])\1{2,}\s*", line):  # --- horizontal rule
         line = "──────────"
     else:
         line = re.sub(r"^(\s*)[*+-]\s+", r"\1• ", line)
-    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(line))
+    escaped = html.escape(MD_ESCAPE.sub(r"\1", line))
+    escaped = MD_LINK.sub(r'<a href="\2">\1</a>', escaped)
+    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
 
 
 def plain_to_telegram(source: str) -> str:
     """Render a whole plain-text answer or guide as Telegram HTML."""
-    rendered = (render_line(line) for line in source.split("\n"))
+    rendered = (render_line(line) for line in tables_to_lines(source).split("\n"))
     return "\n".join(line for line in rendered if line is not None)
 
 
@@ -146,7 +180,7 @@ def render_chunks(source: str, limit: int = TELEGRAM_LIMIT) -> list[str]:
     chunks: list[str] = []
     current = ""
 
-    for raw in source.split("\n"):
+    for raw in tables_to_lines(source).split("\n"):
         rendered = render_line(raw)
         if rendered is None:
             continue
@@ -174,7 +208,7 @@ def render_chunks(source: str, limit: int = TELEGRAM_LIMIT) -> list[str]:
 
 def strip_tags(rendered: str) -> str:
     """The plain-text version of a rendered chunk, for the fallback send."""
-    return html.unescape(re.sub(r"</?b>", "", rendered))
+    return html.unescape(re.sub(r'</?b>|<a href="[^"]*">|</a>', "", rendered))
 
 
 async def reply(message, source: str, reply_markup: Any = None) -> None:
@@ -227,6 +261,11 @@ def portal_keyboard(lang: str) -> InlineKeyboardMarkup | None:
     if not PORTAL_URL:
         return None
     return InlineKeyboardMarkup([[InlineKeyboardButton(text("portal", lang), url=PORTAL_URL)]])
+
+
+def retry_keyboard(callback_data: str, lang: str) -> InlineKeyboardMarkup:
+    """A single "🔄 Retry" button, shown after a temporary loading failure."""
+    return InlineKeyboardMarkup([[InlineKeyboardButton(text("btn_retry", lang), callback_data=callback_data)]])
 
 
 def user_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -303,13 +342,29 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_guide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """US3: show the approved step-by-step registration guide."""
+    """US2: show the approved step-by-step registration guide.
+
+    Not published -> "Guide not available for this semester" (never another
+    semester's guide); a temporary read failure -> a message with Retry.
+    """
     lang = user_lang(update, context)
-    guide = core.load_guide(lang)
+    try:
+        guide = core.load_guide(lang)
+    except core.GuideError as exc:
+        print(f"[bot] registration guide: {exc}")
+        await update.effective_message.reply_text(
+            core.msg("guide_error", lang), reply_markup=retry_keyboard("guide:retry", lang)
+        )
+        return
     if not guide or not guide.strip():
         await update.effective_message.reply_text(core.msg("guide_missing", lang))
         return
     await reply(update.effective_message, guide.strip(), reply_markup=portal_keyboard(lang))
+
+
+async def on_guide_retry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    await cmd_guide(update, context)
 
 
 async def on_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -415,6 +470,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("lang", cmd_lang))
     app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(CommandHandler("guide", cmd_guide))
+    app.add_handler(CallbackQueryHandler(on_guide_retry, pattern=r"^guide:retry$"))
     app.add_handler(CallbackQueryHandler(on_lang_chosen, pattern=r"^lang:"))
     app.add_handler(CallbackQueryHandler(on_menu, pattern=MENU_PATTERN))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_question))
