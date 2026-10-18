@@ -67,6 +67,15 @@ T: dict[str, dict[str, str]] = {
         "Documents are attached to your university account (student number), so first sign in to the "
         "university portal (my.sdu.edu.kz). This confirms that your account is active. Sign in now?",
     },
+    # Shown on the first screen and under every checklist: the bot is not an official channel.
+    "prototype": {
+        "kk": "ℹ️ Бұл — оқу жобасының прототипі: құжаттар SDU-ға ресми түрде жіберілмейді. "
+        "Ресми тапсыру admissions.sdu.edu.kz және Қабылдау комиссиясы арқылы жүреді.",
+        "ru": "ℹ️ Это учебный прототип: документы не передаются в SDU официально. "
+        "Официальная подача — через admissions.sdu.edu.kz и Приёмную комиссию.",
+        "en": "ℹ️ This is a student-project prototype: documents are not officially sent to SDU. "
+        "Official submission is through admissions.sdu.edu.kz and the Admissions Office.",
+    },
     "btn_signin": {"kk": "🔐 Кіру", "ru": "🔐 Войти", "en": "🔐 Sign in"},
     "btn_cancel": {"kk": "✖️ Бас тарту", "ru": "✖️ Отмена", "en": "✖️ Cancel"},
     # "cancelled" and "session_lost" are also used by the shared sign-in in accounts_bot.
@@ -143,11 +152,11 @@ T: dict[str, dict[str, str]] = {
     "btn_track": {"kk": "🔁 Түсу негізін өзгерту", "ru": "🔁 Сменить основу", "en": "🔁 Change track"},
     "ask_file": {
         "kk": "📎 «{doc}» құжатын файл ретінде жіберіңіз.\nФормат: {formats}, ең көбі {mb} МБ.\n"
-        "🔒 Файлды тек құжаттарды тексеретін қабылдау комиссиясы көреді.",
+        "🔒 Файлды тек осы боттың баптауында көрсетілген тексерушілер көреді.",
         "ru": "📎 Отправьте документ «{doc}» файлом.\nФормат: {formats}, до {mb} МБ.\n"
-        "🔒 Файл увидят только сотрудники приёмной комиссии, которые проверяют документы.",
+        "🔒 Файл видят только проверяющие, указанные в настройках этого бота.",
         "en": "📎 Send «{doc}» as a file.\nFormat: {formats}, up to {mb} MB.\n"
-        "🔒 Only the admissions staff who check documents can see the file.",
+        "🔒 Only the reviewers set up in this bot can see the file.",
     },
     "bad_format": {
         "kk": "❌ «{doc}» қабылданбады: файл форматы дұрыс емес ({got}). Рұқсат етілген формат: {formats}. "
@@ -425,6 +434,8 @@ def checklist_text(catalog: documents.Catalog, submission: documents.Submission,
         "",
         t("rules", lang).format(formats=_formats(all_formats), mb=_mb(catalog.max_bytes)),
         t("source", lang).format(url=catalog.source, date=checked),
+        "",
+        t("prototype", lang),
     ]
     return "\n".join(lines)
 
@@ -464,7 +475,7 @@ def _board(student_id: str, lang: str) -> tuple[str, InlineKeyboardMarkup]:
     catalog = documents.load_catalog()
     submission = documents.store().get(student_id)
     if submission is None or submission.track not in catalog.tracks:
-        return t("choose_track", lang), track_keyboard(catalog, lang)
+        return f"{t('choose_track', lang)}\n\n{t('prototype', lang)}", track_keyboard(catalog, lang)
     return checklist_text(catalog, submission, lang), checklist_keyboard(catalog, submission, lang)
 
 
@@ -482,7 +493,8 @@ async def cmd_documents(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             InlineKeyboardButton(t("btn_signin", lang), callback_data="docs:signin"),
             InlineKeyboardButton(t("btn_cancel", lang), callback_data="docs:nosignin"),
         ]])
-        await update.effective_message.reply_text(t("need_link", lang), reply_markup=keyboard)
+        text = f"{t('need_link', lang)}\n\n{t('prototype', lang)}"
+        await update.effective_message.reply_text(text, reply_markup=keyboard)
         return grade_bot.CHOOSE
     text, markup = _board(student_id, lang)
     await _send(context.bot, update.effective_chat.id, text, markup)
