@@ -75,6 +75,49 @@ class US1ChatbotTests(unittest.TestCase):
         self.assertIn('"У меня нет этой информации, пожалуйста, обратитесь в администрацию."', prompts[1])
         self.assertIn('Answer ONLY using the knowledge base below', prompts[0])
 
+    def test_fallback_tells_whom_to_contact(self):
+        replies = iter([
+            'Менде бұл ақпарат жоқ, әкімшілікке хабарласыңыз.',
+            'у меня нет этой информации пожалуйста обратитесь в администрацию',
+            "I don't have this information, please contact the administration.",
+        ])
+
+        def fake(contents, system_prompt, deadline=None):
+            return SimpleNamespace(text=next(replies))
+
+        with patch.object(core, 'ask_ai', fake):
+            kk = core.answer('Асхана қай уақытта ашылады?', [], 'kk')
+            ru = core.answer('Когда открывается столовая?', [], 'ru')
+            en = core.answer('When does the canteen open?', [], 'en')
+        self.assertTrue(kk.startswith('Менде бұл ақпарат жоқ, әкімшілікке хабарласыңыз.\n\nБайланыс:'))
+        self.assertTrue(ru.startswith('У меня нет этой информации, пожалуйста, обратитесь в администрацию.\n\nКонтакты:'))
+        self.assertTrue(en.startswith("I don't have this information, please contact the administration.\n\nContacts:"))
+        for text in (kk, ru, en):
+            self.assertIn('ssc@sdu.edu.kz', text)
+            self.assertIn('+7 (727) 307 95 65', text)
+
+    def test_follow_up_about_contacts_is_answerable(self):
+        prompts = []
+
+        def fake(contents, system_prompt, deadline=None):
+            prompts.append((contents, system_prompt))
+            return SimpleNamespace(text='SSC: ssc@sdu.edu.kz')
+
+        history = [
+            {'role': 'user', 'text': 'Асхана қай уақытта ашылады?'},
+            {'role': 'model', 'text': 'Менде бұл ақпарат жоқ, әкімшілікке хабарласыңыз.'},
+        ]
+        with patch.object(core, 'ask_ai', fake):
+            self.assertEqual(core.answer('Қалай хабарласамын?', history, 'kk'), 'SSC: ssc@sdu.edu.kz')
+        contents, prompt = prompts[0]
+        self.assertEqual(len(contents), 3)  # the earlier turns go to the model too
+        self.assertIn('FOLLOW-UP RULE', prompt)
+        self.assertIn('қалай хабарласамын?', prompt)
+        self.assertIn('How to contact the administration', prompt)  # knowledge entry
+        self.assertIn('"медпункт"', prompt)  # informal names map to the official ones
+        self.assertIn('Medical Center (медпункт', prompt)
+        self.assertIn('say to use /deadline', prompt)
+
 
 class US2GuideRenderingTests(unittest.TestCase):
     """US2 View course registration guide: what Telegram actually shows."""
