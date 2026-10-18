@@ -294,15 +294,39 @@ async def keep_typing(bot, chat_id: int) -> None:
 # ------------------------------------------------------------- handlers ----
 
 
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    lang = user_lang(update, context)
+def welcome_text(update: Update, lang: str) -> str:
     user = update.effective_user
     name = (user.first_name if user and user.first_name else "").strip() or text("default_name", lang)
-    await reply(
-        update.effective_message,
-        text("start", lang).format(name=name),
-        reply_markup=home_keyboard(lang),
-    )
+    return text("start", lang).format(name=name)
+
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = user_lang(update, context)
+    await reply(update.effective_message, welcome_text(update, lang), reply_markup=home_keyboard(lang))
+
+
+async def edit_or_reply(update: Update, source: str, reply_markup: Any = None) -> None:
+    """Show `source` in place of the message whose button was pressed.
+
+    Used for language switching, so the chat keeps one menu in the current
+    language instead of piling up copies in the old one. Falls back to a new
+    message when there is nothing to edit (a typed command), the text needs
+    more than one message, or Telegram refuses the edit.
+    """
+    query = update.callback_query
+    chunks = render_chunks(source)
+    if query is not None and query.message is not None and len(chunks) == 1:
+        try:
+            await query.edit_message_text(
+                chunks[0],
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+                reply_markup=reply_markup,
+            )
+            return
+        except TelegramError as exc:
+            print(f"[bot] could not edit the menu message ({exc}); sending a new one")
+    await reply(update.effective_message, source, reply_markup=reply_markup)
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -311,15 +335,17 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/lang or the 🌐 button. From the button, the menu itself turns into the picker."""
     lang = user_lang(update, context)
-    await update.effective_message.reply_text(text("choose_lang", lang), reply_markup=language_keyboard())
+    await edit_or_reply(update, text("choose_lang", lang), reply_markup=language_keyboard())
 
 
 async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     chosen = core.normalize_lang(query.data.split(":", 1)[-1])
     context.user_data["lang"] = chosen
+    # "Language switched" is a short pop-up, not one more message in the chat.
+    await query.answer(text("lang_set", chosen))
     if update.effective_chat.type == "private":
         commands = [BotCommand(name, label) for name, label in COMMAND_LABELS[chosen]]
         try:
@@ -328,11 +354,8 @@ async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
         except TelegramError as exc:
             print(f"[bot] could not update the chat command menu: {exc}")
-    try:
-        await query.edit_message_text(text("lang_set", chosen))
-    except TelegramError:
-        await query.message.reply_text(text("lang_set", chosen))
-    await cmd_start(update, context)
+    # The picker becomes the home menu in the new language: no old-language copy is left.
+    await edit_or_reply(update, welcome_text(update, chosen), reply_markup=home_keyboard(chosen))
 
 
 async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

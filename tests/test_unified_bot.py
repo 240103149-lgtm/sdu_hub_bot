@@ -119,8 +119,8 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         mocked('shutdown', new=AsyncMock())
         message = Message(1, datetime.now(timezone.utc), Chat(42, 'private'), text='reply')
         self.send = mocked('send_message', new=AsyncMock(return_value=message))
-        mocked('edit_message_text', new=AsyncMock(return_value=message))
-        mocked('answer_callback_query', new=AsyncMock(return_value=True))
+        self.edit = mocked('edit_message_text', new=AsyncMock(return_value=message))
+        self.answer = mocked('answer_callback_query', new=AsyncMock(return_value=True))
         self.delete = mocked('delete_message', new=AsyncMock(return_value=True))
         mocked('send_chat_action', new=AsyncMock(return_value=True))
         self.set_commands = mocked('set_my_commands', new=AsyncMock(return_value=True))
@@ -245,15 +245,34 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('login_flow', self.app.user_data[42])
         await self.update('ordinary question')
         self.ai.assert_awaited_once()
+        sent_before = self.send.await_count
         await self.update(callback='menu:lang')
-        keyboard = self.send.call_args.kwargs['reply_markup'].inline_keyboard
+        # The menu message itself turns into the language picker...
+        keyboard = self.edit.call_args.kwargs['reply_markup'].inline_keyboard
         self.assertEqual([b.callback_data for b in keyboard[0]], ['lang:kk', 'lang:ru', 'lang:en'])
+        self.assertEqual(self.send.await_count, sent_before)
         await self.update(callback='menu:grade')
+        sent_before = self.send.await_count
         await self.update(callback='lang:ru')
         self.assertNotIn('login_flow', self.app.user_data[42])
         self.assertEqual(self.app.user_data[42]['lang'], 'ru')
-        self.assertIn('📚 Учёба', self.send.call_args.kwargs['text'])
-        self.assertEqual(self.send.call_args.kwargs['reply_markup'].inline_keyboard[0][0].text, '📅 Дедлайны')
+        # ...and then into the home menu in the new language: no old copy, no extra message.
+        self.assertEqual(self.send.await_count, sent_before)
+        self.assertIn('📚 Учёба', self.edit.call_args.kwargs['text'])
+        self.assertEqual(self.edit.call_args.kwargs['reply_markup'].inline_keyboard[0][0].text, '📅 Дедлайны')
+        self.assertEqual(self.answer.call_args.kwargs['text'], telegram_bot.text('lang_set', 'ru'))
+
+    async def test_typed_lang_command_sends_the_picker(self):
+        await self.update('/lang')
+        keyboard = self.send.call_args.kwargs['reply_markup'].inline_keyboard
+        self.assertEqual([b.callback_data for b in keyboard[0]], ['lang:kk', 'lang:ru', 'lang:en'])
+
+    async def test_failed_edit_falls_back_to_a_new_message(self):
+        from telegram.error import BadRequest
+        self.edit.side_effect = BadRequest('Message to edit not found')
+        await self.update(callback='lang:en')
+        self.assertIn('Hi, Student!', self.send.call_args.kwargs['text'])
+        self.assertEqual(self.send.call_args.kwargs['reply_markup'].inline_keyboard[0][0].text, '📅 Deadlines')
 
     async def test_help_groups_account_controls_and_group_buttons_are_safe(self):
         self.app.user_data[-100]['lang'] = 'kk'
