@@ -26,6 +26,8 @@ from docx.text.paragraph import Paragraph
 from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
+
+import i18n
 import logging
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -83,68 +85,8 @@ if AI_PROVIDER == "gemini":
 LANGS = {"kk": "Kazakh", "ru": "Russian", "en": "English"}
 DEFAULT_LANG = "en"
 
-MESSAGES: dict[str, dict[str, str]] = {
-    "empty": {
-        "kk": "Сұрақ бос болмауы керек.",
-        "ru": "Вопрос не должен быть пустым.",
-        "en": "The question can't be empty.",
-    },
-    "too_long": {
-        "kk": "Сұрақ тым ұзын (ең көбі 2000 таңба).",
-        "ru": "Вопрос слишком длинный (не более 2000 символов).",
-        "en": "The question is too long (2000 characters max).",
-    },
-    "rate_limit": {
-        "kk": "Сұраулар лимитіне жеттік (тегін тариф). Бір минут күтіп, қайта жіберіңіз.",
-        "ru": "Достигнут лимит запросов (бесплатный тариф). Подождите минуту и отправьте снова.",
-        "en": "Request limit reached (free tier). Wait a minute and try again.",
-    },
-    "busy": {
-        "kk": "Жасанды интеллект қазір жүктемеге ұшырап тұр. Бірнеше секундтан кейін қайта жіберіңіз.",
-        "ru": "Искусственный интеллект сейчас перегружен. Отправьте вопрос снова через несколько секунд.",
-        "en": "Artificial intelligence is under heavy load right now. Try again in a few seconds.",
-    },
-    # US5: "a user must be warned with a Connection error message if the AI
-    # server is unreachable".
-    "connection": {
-        "kk": "Қосылым қатесі: AI серверіне жете алмадық. Интернетті тексеріп, қайталап көріңіз.",
-        "ru": "Ошибка соединения: не удалось связаться с AI-сервером. Проверьте интернет и попробуйте снова.",
-        "en": "Connection error: the AI server is unreachable. Check your internet and try again.",
-    },
-    "timeout": {
-        "kk": "Жауап тым ұзақ дайындалды. Сұрағыңызды қайта жіберіп көріңіз.",
-        "ru": "Ответ готовился слишком долго. Попробуйте отправить вопрос ещё раз.",
-        "en": "The answer took too long. Please send your question again.",
-    },
-    "api_error": {
-        "kk": "Жасанды интеллектке қосыла алмадық. .env-тегі API кілті мен модель атауын тексеріңіз "
-        "(нақты себебі терминалда жазылған).",
-        "ru": "Не удалось подключиться к искусственному интеллекту. Проверьте API-ключ и название модели в .env "
-        "(точная причина указана в терминале).",
-        "en": "Couldn't connect to artificial intelligence. Check the API key and model name in .env "
-        "(the exact cause is in the terminal).",
-    },
-    "unexpected": {
-        "kk": "Күтпеген қате шықты (нақты себебі терминалда жазылған).",
-        "ru": "Произошла непредвиденная ошибка (точная причина указана в терминале).",
-        "en": "An unexpected error occurred (the exact cause is in the terminal).",
-    },
-    "no_answer": {
-        "kk": "Жауап бере алмадым. Сұрағыңызды басқаша құрастырып көріңіз.",
-        "ru": "Не удалось подготовить ответ. Попробуйте переформулировать вопрос.",
-        "en": "I couldn't produce an answer. Try rephrasing your question.",
-    },
-    "schedule_missing": {
-        "kk": "Сабақ кестесі жүктелмеді. Бос кабинеттерді кейінірек тексеріңіз.",
-        "ru": "Расписание не загружено. Попробуйте проверить аудитории позже.",
-        "en": "The class schedule is unavailable. Please try again later.",
-    },
-    "guide_missing": {
-        "kk": "Нұсқаулық әлі жарияланбаған. Тіркеу бөлімімен (Registrar's office) хабарласыңыз.",
-        "ru": "Инструкция пока не опубликована. Обратитесь в отдел регистрации (Registrar's office).",
-        "en": "The guide has not been published yet. Please contact the Registrar's office.",
-    },
-}
+# The texts are in locales/<lang>.json, section "core" (US6).
+MESSAGES: dict[str, dict[str, str]] = i18n.by_key("core")
 
 
 def normalize_lang(value: Any, default: str = DEFAULT_LANG) -> str:

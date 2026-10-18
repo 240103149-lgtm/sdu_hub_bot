@@ -20,74 +20,20 @@ from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 import core
+import i18n
 import rooms
 from telegram_bot import add_command, render_chunks, user_lang
 
 # ------------------------------------------------------------------ texts ----
 
-R: dict[str, dict[str, str]] = {
-    "title": {
-        "kk": "Бос кабинеттер: {count}",
-        "ru": "Свободные аудитории: {count}",
-        "en": "Free rooms: {count}",
-    },
-    "now": {"kk": "қазір", "ru": "сейчас", "en": "now"},
-    "next": {"kk": "келесі сабақ", "ru": "следующая пара", "en": "next period"},
-    "day_over": {
-        "kk": "Бүгінгі сабақтар аяқталды, сондықтан келесі оқу күні көрсетілді.",
-        "ru": "Занятия на сегодня закончились, поэтому показан следующий учебный день.",
-        "en": "Classes are over for today, so this is the next class day.",
-    },
-    "day_off": {
-        "kk": "Бүгін сабақ жоқ, сондықтан келесі оқу күні көрсетілді.",
-        "ru": "Сегодня занятий нет, поэтому показан следующий учебный день.",
-        "en": "There are no classes today, so this is the next class day.",
-    },
-    "none": {
-        "kk": "Бұл уақытта бос кабинет жоқ.",
-        "ru": "В это время свободных аудиторий нет.",
-        "en": "No rooms are free at this time.",
-    },
-    "legend": {
-        "kk": "Жақшадағы уақыт — кабинеттегі келесі сабақтың басталуы, оған дейін кабинет бос. "
-        "Жақша болмаса, сол күні ол жерде сабақ қалмаған. Есеп тек сабақ кестесі бойынша.",
-        "ru": "Время в скобках — начало следующего занятия в аудитории, до него она свободна. "
-        "Без скобок — в этот день занятий там больше нет. Учитывается только расписание занятий.",
-        "en": "Time in brackets: when the next class in that room starts - it's free until then. "
-        "No brackets: no more classes there that day. Based on the class schedule only.",
-    },
-    "bad_time": {
-        "kk": "Уақытты былай жазыңыз: /rooms 14:30 (сабақтар {first}–{last} аралығында).",
-        "ru": "Укажите время так: /rooms 14:30 (занятия идут с {first} до {last}).",
-        "en": "Write the time like this: /rooms 14:30 (classes run {first}–{last}).",
-    },
-    "btn_now": {"kk": "🔄 Қазір", "ru": "🔄 Сейчас", "en": "🔄 Now"},
-}
+R: dict[str, dict[str, str]] = i18n.by_key("rooms")  # locales/<lang>.json, section "rooms"
 
-MENU = {"kk": "Бос кабинеттер", "ru": "Свободные аудитории", "en": "Free rooms"}
-HELP_LINE = {
-    "kk": "/rooms — бос кабинеттер (немесе /rooms 14:30)",
-    "ru": "/rooms — свободные аудитории (или /rooms 14:30)",
-    "en": "/rooms — free rooms (or /rooms 14:30)",
-}
+MENU = R["menu"]
+HELP_LINE = R["help_line"]
 
 # Schedule day code -> (short name for the day buttons, full name for the heading).
 DAY_NAMES: dict[str, dict[str, tuple[str, str]]] = {
-    "kk": {
-        "Mo": ("Дс", "Дүйсенбі"), "Tu": ("Сс", "Сейсенбі"), "We": ("Ср", "Сәрсенбі"),
-        "Th": ("Бс", "Бейсенбі"), "Fr": ("Жм", "Жұма"), "Sa": ("Сн", "Сенбі"),
-        "Su": ("Жс", "Жексенбі"),
-    },
-    "ru": {
-        "Mo": ("Пн", "Понедельник"), "Tu": ("Вт", "Вторник"), "We": ("Ср", "Среда"),
-        "Th": ("Чт", "Четверг"), "Fr": ("Пт", "Пятница"), "Sa": ("Сб", "Суббота"),
-        "Su": ("Вс", "Воскресенье"),
-    },
-    "en": {
-        "Mo": ("Mo", "Monday"), "Tu": ("Tu", "Tuesday"), "We": ("We", "Wednesday"),
-        "Th": ("Th", "Thursday"), "Fr": ("Fr", "Friday"), "Sa": ("Sa", "Saturday"),
-        "Su": ("Su", "Sunday"),
-    },
+    lang: {day: tuple(names) for day, names in days.items()} for lang, days in R["day_names"].items()
 }
 
 

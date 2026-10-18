@@ -43,6 +43,7 @@ from telegram.ext import (
 
 import core
 import grade
+import i18n
 from grade import PortalError
 from telegram_bot import BOT, COMMAND_LABELS, keep_typing, user_lang
 
@@ -53,139 +54,10 @@ PENDING_TTL = 600  # seconds a half-finished sign-in may wait for the 2FA code
 
 # ------------------------------------------------------------------ texts ----
 
-G: dict[str, dict[str, str]] = {
-    "need_link": {
-        "kk": "Бағаларды көру үшін университет порталына (my.sdu.edu.kz) кіріп, "
-        "оны ботпен байланыстыру керек. Қазір байланыстырамыз ба?",
-        "ru": "Чтобы посмотреть оценки, нужно войти в портал университета (my.sdu.edu.kz) "
-        "и связать его с ботом. Сделаем это сейчас?",
-        "en": "To see your grades, you need to sign in to the university portal "
-        "(my.sdu.edu.kz) and link it to the bot. Do it now?",
-    },
-    "btn_register": {"kk": "✅ Тіркелу", "ru": "✅ Зарегистрироваться", "en": "✅ Register"},
-    "btn_cancel": {"kk": "✖️ Бас тарту", "ru": "✖️ Отмена", "en": "✖️ Cancel"},
-    "cancelled": {
-        "kk": "Сіз порталға кіру процесінен бас тарттыңыз. Қаласаңыз, /grade арқылы қайта бастай аласыз.",
-        "ru": "Вы отменили вход в портал. Если передумаете, отправьте /grade снова.",
-        "en": "You cancelled the portal sign-in. If you change your mind, send /grade again.",
-    },
-    "ask_id": {
-        "kk": "Студент нөміріңізді (Student number) жазыңыз.\nБас тарту: /cancel",
-        "ru": "Введите ваш студенческий номер (Student number).\nОтмена: /cancel",
-        "en": "Enter your student number.\nTo cancel: /cancel",
-    },
-    "invalid_id": {
-        "kk": "Студент нөмірі бос болмауы және бос орынсыз болуы керек. Қайта жазыңыз.",
-        "ru": "Студенческий номер не должен быть пустым или содержать пробелы. Введите ещё раз.",
-        "en": "The student number can't be empty or contain spaces. Please enter it again.",
-    },
-    "ask_password": {
-        "kk": "Енді порталдың парольін жазыңыз.\n"
-        "🔒 Пароль тек my.sdu.edu.kz порталына жіберіледі: ботта сақталмайды, "
-        "хабарлама бірден жойылады.",
-        "ru": "Теперь введите пароль от портала.\n"
-        "🔒 Пароль уходит только на my.sdu.edu.kz: бот его не сохраняет, "
-        "а сообщение сразу удаляется.",
-        "en": "Now enter your portal password.\n"
-        "🔒 It is sent only to my.sdu.edu.kz: the bot doesn't store it, "
-        "and the message is deleted right away.",
-    },
-    "logging_in": {
-        "kk": "⏳ Порталға кіріп жатырмын…",
-        "ru": "⏳ Вхожу в портал…",
-        "en": "⏳ Signing in to the portal…",
-    },
-    "ask_code": {
-        "kk": "📧 Поштаңызға растау коды жіберілді. Кодты осында жазыңыз.",
-        "ru": "📧 На вашу почту отправлен код подтверждения. Введите его здесь.",
-        "en": "📧 A verification code was sent to your e-mail. Enter it here.",
-    },
-    "bad_code": {
-        "kk": "Код қате немесе мерзімі өтіп кеткен. Кодты қайта жазыңыз (/cancel — бас тарту).",
-        "ru": "Код неверный или просрочен. Введите код ещё раз (/cancel — отмена).",
-        "en": "The code is wrong or expired. Enter it again (/cancel to stop).",
-    },
-    "too_many_codes": {
-        "kk": "Код бірнеше рет қате енгізілді. Қауіпсіздік үшін процесс тоқтатылды. /grade арқылы қайта бастаңыз.",
-        "ru": "Код введён неверно несколько раз. Для безопасности процесс остановлен. Начните заново: /grade.",
-        "en": "The code was wrong several times, so the sign-in was stopped for safety. Start again with /grade.",
-    },
-    "bad_credentials": {
-        "kk": "Студент нөмірі немесе пароль қате. /grade арқылы қайта көріңіз.",
-        "ru": "Неверный студенческий номер или пароль. Попробуйте снова: /grade.",
-        "en": "Wrong student number or password. Try again with /grade.",
-    },
-    "unavailable": {
-        "kk": "Портал қазір жауап бермейді. Кейінірек қайталап көріңіз.",
-        "ru": "Портал сейчас не отвечает. Попробуйте позже.",
-        "en": "The portal isn't responding right now. Please try again later.",
-    },
-    "unexpected_page": {
-        "kk": "Портал беті күтілгеннен басқаша болып шықты. Бұл туралы әзірлеушілерге хабарлаңыз.",
-        "ru": "Страница портала выглядит не так, как ожидалось. Сообщите об этом разработчикам.",
-        "en": "The portal page doesn't look as expected. Please tell the developers.",
-    },
-    "session_lost": {
-        "kk": "Кіру сессиясы ескірді (10 минуттан артық болды). /grade арқылы қайта бастаңыз.",
-        "ru": "Сессия входа устарела (прошло больше 10 минут). Начните заново: /grade.",
-        "en": "The sign-in session expired (over 10 minutes). Start again with /grade.",
-    },
-    "linked_ok": {
-        "kk": "✅ Портал ботпен байланыстырылды! Байланысты өшіру: /unlink",
-        "ru": "✅ Портал связан с ботом! Отвязать: /unlink",
-        "en": "✅ The portal is linked to the bot! To unlink: /unlink",
-    },
-    "session_expired": {
-        "kk": "Портал сессиясы аяқталды. /grade арқылы қайта кіріңіз.",
-        "ru": "Сессия на портале закончилась. Войдите заново: /grade.",
-        "en": "Your portal session has expired. Sign in again with /grade.",
-    },
-    "grades_not_configured": {
-        "kk": "Портал байланысқан, бірақ бағаларды көрсету әлі қосылмаған (келесі қадам).",
-        "ru": "Портал связан, но показ оценок ещё не подключён (следующий шаг).",
-        "en": "The portal is linked, but showing grades isn't connected yet (next step).",
-    },
-    "grades_title": {
-        "kk": "📊 Бағаларыңыз",
-        "ru": "📊 Ваши оценки",
-        "en": "📊 Your grades",
-    },
-    "grades_empty": {
-        "kk": "Порталда баға табылмады.",
-        "ru": "На портале оценок не найдено.",
-        "en": "No grades were found on the portal.",
-    },
-    "btn_prev": {"kk": "◀ Алдыңғы", "ru": "◀ Предыдущий", "en": "◀ Previous"},
-    "btn_now": {"kk": "🔄 Қазір", "ru": "🔄 Сейчас", "en": "🔄 Now"},
-    "unit_credit": {"kk": "кр.", "ru": "кр.", "en": "cr."},
-    "lbl_credits": {"kk": "Кредит", "ru": "Кредиты", "en": "Credits"},
-    "semester_title": {
-        "kk": "{years} оқу жылы, {n}-семестр",
-        "ru": "{years}, семестр {n}",
-        "en": "{years}, Semester {n}",
-    },
-    "unlinked": {
-        "kk": "Портал байланысы өшірілді, сақталған деректер жойылды.",
-        "ru": "Связь с порталом удалена, сохранённые данные стёрты.",
-        "en": "The portal is unlinked and the saved data has been deleted.",
-    },
-    "not_linked": {
-        "kk": "Портал байланыстырылмаған. Бастау: /grade",
-        "ru": "Портал не привязан. Начать: /grade",
-        "en": "No portal is linked. Start with /grade",
-    },
-}
+G: dict[str, dict[str, str]] = i18n.by_key("grade")  # locales/<lang>.json, section "grade"
 
-MENU = {
-    "kk": ("grade", "Бағалар (портал)"),
-    "ru": ("grade", "Оценки (портал)"),
-    "en": ("grade", "Grades (portal)"),
-}
-HELP_LINE = {
-    "kk": "/grade — бағалар (университет порталы)",
-    "ru": "/grade — оценки (портал университета)",
-    "en": "/grade — grades (university portal)",
-}
+MENU = {lang: ("grade", label) for lang, label in G["menu"].items()}
+HELP_LINE = G["help_line"]
 
 
 def t(key: str, lang: str) -> str:

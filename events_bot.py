@@ -12,21 +12,12 @@ import re
 from telegram.ext import CommandHandler
 
 import core
+import i18n
 from rooms import CAMPUS_TZ
 from telegram_bot import add_command, reply, user_lang
 
 EVENTS_FILE = core.KNOWLEDGE_DIR / "campus_events.md"
-TEXTS = {
-    "kk": {"title": "Кампус ивенттері", "upcoming": "Алда", "past": "Өтіп кетті", "today": "Бүгін",
-           "missing": "Ивенттер туралы мәлімет әлі жарияланбаған.",
-           "source": "Толық мәлімет жарияланған деректің түпнұсқа тілінде берілген."},
-    "ru": {"title": "События кампуса", "upcoming": "Предстоит", "past": "Уже прошло", "today": "Сегодня",
-           "missing": "Информация о событиях пока не опубликована.",
-           "source": "Подробности приведены на языке опубликованного источника."},
-    "en": {"title": "Campus events", "upcoming": "Upcoming", "past": "Already passed", "today": "Today",
-           "missing": "Event information has not been published yet.",
-           "source": "Details are shown in the published source language."},
-}
+TEXTS = i18n.by_lang("events")  # locales/<lang>.json, section "events"
 
 
 def render_events(source: str, lang: str, today: date | None = None) -> str:
@@ -66,6 +57,6 @@ async def cmd_events(update, context):
 
 def register_events(app):
     add_command("events",
-        {"kk": "Кампус ивенттері", "ru": "События кампуса", "en": "Campus events"},
-        {"kk": "/events — кампус ивенттері", "ru": "/events — события кампуса", "en": "/events — campus events"})
+        {lang: texts["menu"] for lang, texts in TEXTS.items()},
+        {lang: texts["help_line"] for lang, texts in TEXTS.items()})
     app.add_handler(CommandHandler("events", cmd_events))

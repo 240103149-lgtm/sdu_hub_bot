@@ -6,6 +6,7 @@
       "config": {
         "includeFiles": [
           "core.py",
+          "i18n.py",
           "main.py",
           "telegram_bot.py",
           "accounts_bot.py",
@@ -19,6 +20,7 @@
           "documents.py",
           "documents_bot.py",
           "data/*.json",
+          "locales/*.json",
           "static/**",
           "knowledge/**"
         ]

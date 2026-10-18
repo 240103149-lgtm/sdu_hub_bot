@@ -15,9 +15,11 @@ from telegram.ext import CommandHandler, ConversationHandler, CallbackQueryHandl
 import deadline_bot as deadline
 import documents_bot as docs
 import grade_bot as grade
+import i18n
 import telegram_bot as bot
 
 FLOW_TTL = 600
+A = i18n.by_key("accounts")  # locales/<lang>.json, section "accounts"
 
 
 def texts_for(feature):
@@ -86,12 +88,7 @@ def leave(callback):
 
 
 async def private_only(update, context):
-    texts = {
-        "kk": "Аккаунтты байланыстыру үшін боттың жеке чатына жазыңыз.",
-        "ru": "Чтобы связать аккаунт, напишите боту в личный чат.",
-        "en": "Please link your account in a private chat with the bot.",
-    }
-    await update.effective_message.reply_text(texts[bot.user_lang(update, context)])
+    await update.effective_message.reply_text(A["private_only"][bot.user_lang(update, context)])
 
 
 def menu_entry(feature, callback):
@@ -154,12 +151,5 @@ def register_accounts(app):
     deadline.register_deadline(app)
     app.add_handler(CommandHandler(["grade", "deadline", "deadlines", "documents"], private_only, filters=~private))
     app.add_handler(CommandHandler("cancel", cancel))
-    for name, menu, help_line in [
-        ("unlink", {"kk": "Портал байланысын өшіру", "ru": "Отвязать портал", "en": "Unlink portal"},
-         {"kk": "/unlink — портал байланысын өшіру", "ru": "/unlink — отвязать портал", "en": "/unlink — unlink portal"}),
-        ("unlink_moodle", {"kk": "Moodle байланысын өшіру", "ru": "Отвязать Moodle", "en": "Unlink Moodle"},
-         {"kk": "/unlink_moodle — Moodle байланысын өшіру", "ru": "/unlink_moodle — отвязать Moodle", "en": "/unlink_moodle — unlink Moodle"}),
-        ("cancel", {"kk": "Кіруді тоқтату", "ru": "Отменить вход", "en": "Cancel sign-in"},
-         {"kk": "/cancel — кіруді тоқтату", "ru": "/cancel — отменить вход", "en": "/cancel — cancel sign-in"}),
-    ]:
-        bot.add_command(name, menu, help_line)
+    for name in ("unlink", "unlink_moodle", "cancel"):
+        bot.add_command(name, A[f"{name}_menu"], A[f"{name}_help"])

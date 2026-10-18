@@ -42,6 +42,7 @@ from telegram.ext import (
 )
 
 import core
+import i18n
 
 # Telegram rejects messages longer than 4096; we leave a little headroom.
 TELEGRAM_LIMIT = 4000
@@ -64,220 +65,13 @@ LANG_BUTTONS = [("kk", "🇰🇿 Қазақша"), ("ru", "🇷🇺 Русски
 
 # ------------------------------------------------------------ bot texts ----
 
-BOT: dict[str, dict[str, str]] = {
-    "kk": {
-        "start": (
-            'Сәлем, {name}! 👋\n'
-            '\n'
-            'Мен — **SDU Hub**, студенттік өмірдегі көмекшіңмін. Дедлайндарды тексеруге, бос кабинет табуға және кампустағы ивенттерден хабардар болуға көмектесемін.\n'
-            '\n'
-            '**📚 Оқу**\n'
-            '/deadline — Moodle тапсырмаларының дедлайндары\n'
-            '/grade — бағаларыңды көру\n'
-            '/guide — сабақ кестесін құру нұсқаулығы\n'
-            '\n'
-            '**🏫 Кампус**\n'
-            '/events — университеттегі ивенттер\n'
-            '/rooms — бос кабинеттер\n'
-            'Керек уақытты да көрсетуге болады: /rooms 14:30\n'
-            '\n'
-            '**🎓 Оқуға қабылдау**\n'
-            '/documents — оқуға қабылдау құжаттарын тапсыру\n'
-            '\n'
-            '**⚙️ Баптаулар**\n'
-            '/lang — Қазақша / Русский / English\n'
-            '/help — барлық командалар мен көмек\n'
-            '\n'
-            '💬 Сұрағың бар ма? Жай ғана жаз:\n'
-            '«Расписание қалай құрамын?»\n'
-            '\n'
-            'Бастау үшін төмендегі батырмалардың бірін таңда 👇'
-        ),
-        "help": (
-            '**SDU Hub · Көмек**\n'
-            '\n'
-            '**📚 Оқу**\n'
-            '/deadline — Moodle тапсырмаларының дедлайндары\n'
-            '/grade — бағаларыңды көру\n'
-            '/guide — сабақ кестесін құру нұсқаулығы\n'
-            '\n'
-            '**🏫 Кампус**\n'
-            '/events — университеттегі ивенттер\n'
-            '/rooms — бос кабинеттер\n'
-            'Керек уақытты да көрсетуге болады: /rooms 14:30\n'
-            '\n'
-            '**🎓 Оқуға қабылдау**\n'
-            '/documents — оқуға қабылдау құжаттарын тапсыру\n'
-            '\n'
-            '**⚙️ Баптаулар**\n'
-            '/lang — Қазақша / Русский / English\n'
-            '/help — барлық командалар мен көмек\n'
-            '\n'
-            '**💬 Әңгіме және аккаунттар**\n'
-            '/start — негізгі мәзірге оралу\n'
-            '/reset — AI әңгімесінің тарихын тазарту\n'
-            '/cancel — аккаунтқа кіруді тоқтату\n'
-            '/unlink — университет порталының байланысын өшіру\n'
-            '/unlink_moodle — Moodle байланысын өшіру\n'
-            '\n'
-            'Бағалар мен дедлайндарды алғаш ашқанда жеке чатта аккаунтыңды байланыстыру ұсынылады.'
-        ),
-        "choose_lang": "Тілді таңдаңыз:",
-        "lang_set": "Тіл қазақшаға ауыстырылды. Сұрағыңызды жазыңыз.",
-        "reset": "Әңгіме тарихы тазартылды. Жаңа сұрақ қоя аласыз.",
-        "portal": "🔗 Тіркеу порталын ашу",
-        "not_text": "Мен әзірге тек мәтінді түсінемін. Сұрағыңызды жазып жіберіңізші.",
-    },
-    "ru": {
-        "start": (
-            'Привет, {name}! 👋\n'
-            '\n'
-            'Я — **SDU Hub**, твой помощник в студенческой жизни. Помогу проверить дедлайны, найти свободную аудиторию и узнать о событиях кампуса.\n'
-            '\n'
-            '**📚 Учёба**\n'
-            '/deadline — дедлайны заданий в Moodle\n'
-            '/grade — твои оценки\n'
-            '/guide — инструкция по составлению расписания\n'
-            '\n'
-            '**🏫 Кампус**\n'
-            '/events — события университета\n'
-            '/rooms — свободные аудитории\n'
-            'Можно указать время: /rooms 14:30\n'
-            '\n'
-            '**🎓 Зачисление**\n'
-            '/documents — сдать документы для зачисления\n'
-            '\n'
-            '**⚙️ Настройки**\n'
-            '/lang — Қазақша / Русский / English\n'
-            '/help — все команды и помощь\n'
-            '\n'
-            '💬 Есть вопрос? Просто напиши:\n'
-            '«Как составить расписание?»\n'
-            '\n'
-            'Чтобы начать, выбери кнопку ниже 👇'
-        ),
-        "help": (
-            '**SDU Hub · Помощь**\n'
-            '\n'
-            '**📚 Учёба**\n'
-            '/deadline — дедлайны заданий в Moodle\n'
-            '/grade — твои оценки\n'
-            '/guide — инструкция по составлению расписания\n'
-            '\n'
-            '**🏫 Кампус**\n'
-            '/events — события университета\n'
-            '/rooms — свободные аудитории\n'
-            'Можно указать время: /rooms 14:30\n'
-            '\n'
-            '**🎓 Зачисление**\n'
-            '/documents — сдать документы для зачисления\n'
-            '\n'
-            '**⚙️ Настройки**\n'
-            '/lang — Қазақша / Русский / English\n'
-            '/help — все команды и помощь\n'
-            '\n'
-            '**💬 Диалог и аккаунты**\n'
-            '/start — вернуться в главное меню\n'
-            '/reset — очистить историю диалога с AI\n'
-            '/cancel — отменить вход в аккаунт\n'
-            '/unlink — отвязать университетский портал\n'
-            '/unlink_moodle — отвязать Moodle\n'
-            '\n'
-            'При первом открытии оценок или дедлайнов бот предложит связать аккаунт в личном чате.'
-        ),
-        "choose_lang": "Выберите язык:",
-        "lang_set": "Язык переключён на русский. Задавайте вопрос.",
-        "reset": "История диалога очищена. Можете задать новый вопрос.",
-        "portal": "🔗 Открыть портал регистрации",
-        "not_text": "Пока я понимаю только текст. Напишите, пожалуйста, ваш вопрос.",
-    },
-    "en": {
-        "start": (
-            'Hi, {name}! 👋\n'
-            '\n'
-            "I'm **SDU Hub**, your student-life assistant. I can help you check deadlines, find a free room and discover campus events.\n"
-            '\n'
-            '**📚 Study**\n'
-            '/deadline — Moodle assignment deadlines\n'
-            '/grade — your grades\n'
-            '/guide — how to create your course schedule\n'
-            '\n'
-            '**🏫 Campus**\n'
-            '/events — university events\n'
-            '/rooms — free classrooms\n'
-            'You can also choose a time: /rooms 14:30\n'
-            '\n'
-            '**🎓 Enrollment**\n'
-            '/documents — submit your enrollment documents\n'
-            '\n'
-            '**⚙️ Settings**\n'
-            '/lang — Қазақша / Русский / English\n'
-            '/help — all commands and help\n'
-            '\n'
-            '💬 Have a question? Just type it:\n'
-            '“How do I create my schedule?”\n'
-            '\n'
-            'Choose a button below to get started 👇'
-        ),
-        "help": (
-            '**SDU Hub · Help**\n'
-            '\n'
-            '**📚 Study**\n'
-            '/deadline — Moodle assignment deadlines\n'
-            '/grade — your grades\n'
-            '/guide — how to create your course schedule\n'
-            '\n'
-            '**🏫 Campus**\n'
-            '/events — university events\n'
-            '/rooms — free classrooms\n'
-            'You can also choose a time: /rooms 14:30\n'
-            '\n'
-            '**🎓 Enrollment**\n'
-            '/documents — submit your enrollment documents\n'
-            '\n'
-            '**⚙️ Settings**\n'
-            '/lang — Қазақша / Русский / English\n'
-            '/help — all commands and help\n'
-            '\n'
-            '**💬 Conversation and accounts**\n'
-            '/start — return to the main menu\n'
-            '/reset — clear your AI conversation history\n'
-            '/cancel — cancel account sign-in\n'
-            '/unlink — unlink the university portal\n'
-            '/unlink_moodle — unlink Moodle\n'
-            '\n'
-            'When you first open grades or deadlines, the bot will offer to link your account in a private chat.'
-        ),
-        "choose_lang": "Choose a language:",
-        "lang_set": "Language switched to English. Go ahead and ask.",
-        "reset": "Conversation history cleared. You can ask a new question.",
-        "portal": "🔗 Open the registration portal",
-        "not_text": "I only understand text for now. Please type your question.",
-    },
-}
+# All texts are in locales/<lang>.json (US6); only the order of menus is set here.
+BOT: dict[str, dict[str, str]] = i18n.by_lang("bot")
 
+COMMAND_ORDER = ("start", "guide", "lang", "reset", "help")
 COMMAND_LABELS: dict[str, list[tuple[str, str]]] = {
-    "kk": [
-        ("start", "Ботты бастау"),
-        ("guide", "Расписание құру нұсқаулығы"),
-        ("lang", "Тілді ауыстыру"),
-        ("reset", "Әңгімені тазарту"),
-        ("help", "Анықтама"),
-    ],
-    "ru": [
-        ("start", "Запустить бота"),
-        ("guide", "Инструкция по расписанию"),
-        ("lang", "Сменить язык"),
-        ("reset", "Очистить диалог"),
-        ("help", "Справка"),
-    ],
-    "en": [
-        ("start", "Start the bot"),
-        ("guide", "Course registration guide"),
-        ("lang", "Change language"),
-        ("reset", "Clear the conversation"),
-        ("help", "Help"),
-    ],
+    lang: [(name, labels[name]) for name in COMMAND_ORDER]
+    for lang, labels in i18n.by_lang("commands").items()
 }
 
 
@@ -406,19 +200,10 @@ async def reply(message, source: str, reply_markup: Any = None) -> None:
             )
 
 
+HOME_ACTIONS = ("deadline", "grade", "events", "rooms", "guide", "documents", "lang")
 HOME_BUTTONS = {
-    "kk": [("deadline", "📅 Дедлайндар"), ("grade", "📊 Бағалар"),
-           ("events", "🎉 Ивенттер"), ("rooms", "🚪 Бос кабинеттер"),
-           ("guide", "📚 Кесте құру"), ("documents", "📄 Құжаттар"),
-           ("lang", "🌐 Тіл")],
-    "ru": [("deadline", "📅 Дедлайны"), ("grade", "📊 Оценки"),
-           ("events", "🎉 События"), ("rooms", "🚪 Аудитории"),
-           ("guide", "📚 Расписание"), ("documents", "📄 Документы"),
-           ("lang", "🌐 Язык")],
-    "en": [("deadline", "📅 Deadlines"), ("grade", "📊 Grades"),
-           ("events", "🎉 Events"), ("rooms", "🚪 Free rooms"),
-           ("guide", "📚 Schedule guide"), ("documents", "📄 Documents"),
-           ("lang", "🌐 Language")],
+    lang: [(action, labels[action]) for action in HOME_ACTIONS]
+    for lang, labels in i18n.by_lang("home").items()
 }
 # grade, deadline and documents are entry points of the sign-in conversation
 # in accounts_bot, so their buttons are handled there, not by on_menu.
@@ -473,7 +258,7 @@ async def keep_typing(bot, chat_id: int) -> None:
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = user_lang(update, context)
     user = update.effective_user
-    name = (user.first_name if user and user.first_name else "").strip() or "студент"
+    name = (user.first_name if user and user.first_name else "").strip() or text("default_name", lang)
     await reply(
         update.effective_message,
         text("start", lang).format(name=name),

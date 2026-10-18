@@ -39,6 +39,7 @@ from telegram.ext import (
 
 import core
 import documents
+import i18n
 import grade_bot
 from documents import MISSING, REJECTED, UNDER_REVIEW, UPLOADED, VERIFIED
 from rooms import CAMPUS_TZ
@@ -52,218 +53,10 @@ TRACK_ICONS = {"grant": "🎓", "paid": "💳"}
 
 # ------------------------------------------------------------------ texts ----
 
-T: dict[str, dict[str, str]] = {
-    "title": {"kk": "Оқуға қабылдау құжаттары", "ru": "Документы для зачисления", "en": "Enrollment documents"},
-    "need_link": {
-        "kk": "📄 Оқуға қабылдау құжаттары\n\n"
-        "Құжаттар университеттегі аккаунтыңызға (студент нөміріне) тіркеледі. Сондықтан алдымен "
-        "университет порталына (my.sdu.edu.kz) кіріңіз — осылай белсенді аккаунтыңыз бар екені расталады. "
-        "Қазір кіресіз бе?",
-        "ru": "📄 Документы для зачисления\n\n"
-        "Документы привязываются к вашему университетскому аккаунту (студенческому номеру). Поэтому "
-        "сначала войдите в портал университета (my.sdu.edu.kz) — так подтверждается, что ваш аккаунт "
-        "активен. Войти сейчас?",
-        "en": "📄 Enrollment documents\n\n"
-        "Documents are attached to your university account (student number), so first sign in to the "
-        "university portal (my.sdu.edu.kz). This confirms that your account is active. Sign in now?",
-    },
-    "btn_signin": {"kk": "🔐 Кіру", "ru": "🔐 Войти", "en": "🔐 Sign in"},
-    "btn_cancel": {"kk": "✖️ Бас тарту", "ru": "✖️ Отмена", "en": "✖️ Cancel"},
-    # "cancelled" and "session_lost" are also used by the shared sign-in in accounts_bot.
-    "cancelled": {
-        "kk": "Құжат тапсыру үшін порталға кіру керек. Дайын болғанда /documents жіберіңіз.",
-        "ru": "Чтобы сдать документы, нужно войти в портал. Когда будете готовы, отправьте /documents.",
-        "en": "You need to sign in to the portal to submit documents. Send /documents when you're ready.",
-    },
-    "session_lost": {
-        "kk": "Кіру сессиясы ескірді (10 минуттан артық болды). /documents арқылы қайта бастаңыз.",
-        "ru": "Сессия входа устарела (прошло больше 10 минут). Начните заново: /documents.",
-        "en": "The sign-in session expired (over 10 minutes). Start again with /documents.",
-    },
-    "start_again": {
-        "kk": "Құжаттарды ашу үшін /documents жіберіңіз.",
-        "ru": "Чтобы открыть документы, отправьте /documents.",
-        "en": "Send /documents to open your documents.",
-    },
-    "private_only": {
-        "kk": "Құжаттарды тек боттың жеке чатында тапсыруға болады.",
-        "ru": "Документы можно сдавать только в личном чате с ботом.",
-        "en": "Documents can only be submitted in a private chat with the bot.",
-    },
-    "choose_track": {
-        "kk": "📄 **Оқуға қабылдау құжаттары**\n\nҚай негізде оқуға түсесіз? Міндетті құжаттар тізімі соған байланысты.",
-        "ru": "📄 **Документы для зачисления**\n\nНа какой основе вы поступаете? От этого зависит список обязательных документов.",
-        "en": "📄 **Enrollment documents**\n\nHow are you enrolling? The list of required documents depends on it.",
-    },
-    "student": {"kk": "Студент нөмірі: {id}", "ru": "Студенческий номер: {id}", "en": "Student number: {id}"},
-    "required": {"kk": "Міндетті", "ru": "Обязательные", "en": "Required"},
-    "optional": {"kk": "Қажет болса", "ru": "При необходимости", "en": "If applicable"},
-    "status_draft": {
-        "kk": "📝 Мәртебе: толтырылуда. Құжаттарды жүктеп, «📤 Тапсыру» батырмасын басыңыз.",
-        "ru": "📝 Статус: черновик. Загрузите документы и нажмите «📤 Отправить».",
-        "en": "📝 Status: draft. Upload the documents, then press «📤 Submit».",
-    },
-    "status_under_review": {
-        "kk": "⏳ Мәртебе: тексерілуде ({since} бастап). Әр құжат тексерілген сәтте осында хабарлаймыз.",
-        "ru": "⏳ Статус: на проверке (с {since}). Как только документ проверят, мы сразу напишем здесь.",
-        "en": "⏳ Status: under review (since {since}). You'll get a message here as soon as each document is checked.",
-    },
-    "status_needs_correction": {
-        "kk": "⚠️ Мәртебе: түзету керек. Қабылданбаған құжатты қайта жүктеп, қайта тапсырыңыз.",
-        "ru": "⚠️ Статус: нужны исправления. Загрузите отклонённый документ заново и отправьте ещё раз.",
-        "en": "⚠️ Status: needs correction. Upload the rejected document again and resubmit.",
-    },
-    "status_verified": {
-        "kk": "✅ Мәртебе: барлық міндетті құжат қабылданды. Құжат тапсыру аяқталды.",
-        "ru": "✅ Статус: все обязательные документы приняты. Сдача документов завершена.",
-        "en": "✅ Status: all required documents are verified. Your document submission is complete.",
-    },
-    # Russian wording is built around «файл» so it agrees with every document name.
-    "doc_missing": {"kk": "жүктелмеген", "ru": "файл не загружен", "en": "missing"},
-    "doc_uploaded": {"kk": "жүктелді, әлі тапсырылмаған", "ru": "файл загружен, ещё не отправлен", "en": "uploaded, not submitted yet"},
-    "doc_under_review": {"kk": "тексерілуде", "ru": "на проверке", "en": "under review"},
-    "doc_verified": {"kk": "қабылданды", "ru": "файл принят", "en": "verified"},
-    "doc_rejected": {
-        "kk": "қабылданбады: {reason} — қайта жүктеңіз",
-        "ru": "файл отклонён: {reason} — загрузите заново",
-        "en": "rejected: {reason} — upload it again",
-    },
-    "rules": {
-        "kk": "Формат: {formats} · ең көбі {mb} МБ · әр құжатқа бір файл (бірнеше беті болса, бір PDF-ке біріктіріңіз).",
-        "ru": "Формат: {formats} · до {mb} МБ · один файл на документ (несколько страниц объедините в один PDF).",
-        "en": "Format: {formats} · up to {mb} MB · one file per document (combine several pages into one PDF).",
-    },
-    "source": {
-        "kk": "Тізім дереккөзі: {url} (тексерілген күні: {date})",
-        "ru": "Источник списка: {url} (проверено {date})",
-        "en": "Source of the list: {url} (checked {date})",
-    },
-    "btn_submit": {"kk": "📤 Тапсыру", "ru": "📤 Отправить", "en": "📤 Submit"},
-    "btn_refresh": {"kk": "🔄 Жаңарту", "ru": "🔄 Обновить", "en": "🔄 Refresh"},
-    "btn_track": {"kk": "🔁 Түсу негізін өзгерту", "ru": "🔁 Сменить основу", "en": "🔁 Change track"},
-    "ask_file": {
-        "kk": "📎 «{doc}» құжатын файл ретінде жіберіңіз.\nФормат: {formats}, ең көбі {mb} МБ.\n"
-        "🔒 Файлды тек құжаттарды тексеретін қабылдау комиссиясы көреді.",
-        "ru": "📎 Отправьте документ «{doc}» файлом.\nФормат: {formats}, до {mb} МБ.\n"
-        "🔒 Файл увидят только сотрудники приёмной комиссии, которые проверяют документы.",
-        "en": "📎 Send «{doc}» as a file.\nFormat: {formats}, up to {mb} MB.\n"
-        "🔒 Only the admissions staff who check documents can see the file.",
-    },
-    "bad_format": {
-        "kk": "❌ «{doc}» қабылданбады: файл форматы дұрыс емес ({got}). Рұқсат етілген формат: {formats}. "
-        "Дұрыс файлды қайта жіберіңіз.",
-        "ru": "❌ Файл для «{doc}» не принят: неверный формат ({got}). Допустимый формат: {formats}. "
-        "Отправьте правильный файл ещё раз.",
-        "en": "❌ «{doc}» was not accepted: wrong file format ({got}). Allowed: {formats}. "
-        "Please send the correct file again.",
-    },
-    "too_large": {
-        "kk": "❌ «{doc}» қабылданбады: файл тым үлкен ({size} МБ, ең көбі {mb} МБ).",
-        "ru": "❌ Файл для «{doc}» не принят: он слишком большой ({size} МБ, максимум {mb} МБ).",
-        "en": "❌ «{doc}» was not accepted: the file is too large ({size} MB, the limit is {mb} MB).",
-    },
-    "saved": {
-        "kk": "✅ «{doc}» жүктелді: {file}",
-        "ru": "✅ Файл для «{doc}» загружен: {file}",
-        "en": "✅ «{doc}» uploaded: {file}",
-    },
-    "no_type": {
-        "kk": "Бұл қай құжат? Алдымен тізімнен құжатты таңдаңыз, содан кейін файлды жіберіңіз.",
-        "ru": "Какой это документ? Сначала выберите документ в списке, затем отправьте файл.",
-        "en": "Which document is this? First choose it in the list, then send the file.",
-    },
-    "already_verified": {
-        "kk": "«{doc}» қабылданып қойған, оны ауыстырудың қажеті жоқ.",
-        "ru": "Документ «{doc}» уже принят, заменять его не нужно.",
-        "en": "«{doc}» is already verified, there's no need to replace it.",
-    },
-    "missing": {
-        "kk": "⚠️ Жетіспейтін құжатты жүктеңіз: {docs}.\nБарлық міндетті құжат жүктелмейінше, тапсыру мүмкін емес.",
-        "ru": "⚠️ Пожалуйста, загрузите недостающий документ: {docs}.\nОтправка невозможна, пока не загружены все обязательные документы.",
-        "en": "⚠️ Please upload the missing document: {docs}.\nSubmission is blocked until every required document is uploaded.",
-    },
-    "submitted": {
-        "kk": "✅ Құжаттар сәтті тапсырылды! Енді олар тексерілуде.",
-        "ru": "✅ Документы успешно отправлены! Теперь они на проверке.",
-        "en": "✅ Submission successful! Your documents are now under review.",
-    },
-    "nothing_new": {
-        "kk": "Жаңа құжат жоқ: барлығы бұрын тапсырылған.",
-        "ru": "Новых документов нет: всё уже отправлено.",
-        "en": "There is nothing new to submit: everything has already been sent.",
-    },
-    "upload_cancelled": {"kk": "Файл жүктеу тоқтатылды.", "ru": "Загрузка файла отменена.", "en": "File upload cancelled."},
-    "verified_one": {
-        "kk": "✅ «{doc}» құжаты тексеріліп, қабылданды.",
-        "ru": "✅ Документ «{doc}» проверен и принят.",
-        "en": "✅ Your document «{doc}» has been verified.",
-    },
-    "rejected_one": {
-        "kk": "❌ «{doc}» құжаты қабылданбады: {reason}.\nОны қайта жүктеп, қайта тапсырыңыз.",
-        "ru": "❌ Документ «{doc}» отклонён: {reason}.\nЗагрузите его заново и отправьте ещё раз.",
-        "en": "❌ Your document «{doc}» was rejected: {reason}.\nPlease upload it again and resubmit.",
-    },
-    "all_verified": {
-        "kk": "🎉 Барлық міндетті құжат қабылданды. Құжат тапсыру аяқталды!",
-        "ru": "🎉 Все обязательные документы приняты. Сдача документов завершена!",
-        "en": "🎉 All required documents are verified. Your document submission is complete!",
-    },
-    "catalog_missing": {
-        "kk": "Құжаттар тізімі әлі жарияланбаған. Қабылдау комиссиясына хабарласыңыз.",
-        "ru": "Список документов пока не опубликован. Обратитесь в приёмную комиссию.",
-        "en": "The list of documents has not been published yet. Please contact the Admissions Office.",
-    },
-    "storage_error": {
-        "kk": "Құжаттар қоймасы уақытша қолжетімсіз. Кейінірек қайталап көріңіз.",
-        "ru": "Хранилище документов временно недоступно. Попробуйте позже.",
-        "en": "Document storage is temporarily unavailable. Please try again later.",
-    },
-    "reason_unreadable": {"kk": "файл анық оқылмайды", "ru": "файл нечитаемый", "en": "the file is unreadable"},
-    "reason_wrong_document": {"kk": "басқа құжат жүктелген", "ru": "загружен не тот документ", "en": "it is a different document"},
-    "reason_invalid": {
-        "kk": "құжат толық емес немесе мерзімі өткен",
-        "ru": "документ неполный или просрочен",
-        "en": "the document is incomplete or expired",
-    },
-    # Admissions staff
-    "rv_new": {
-        "kk": "📥 Тексеруге жаңа құжаттар\nСтудент нөмірі: {id} · {track}\nФайл саны: {n}",
-        "ru": "📥 Новые документы на проверку\nСтуденческий номер: {id} · {track}\nФайлов: {n}",
-        "en": "📥 New documents to review\nStudent number: {id} · {track}\nFiles: {n}",
-    },
-    "rv_queue": {
-        "kk": "Тексеруді күтіп тұрған файлдар: {n}",
-        "ru": "Файлов, ожидающих проверки: {n}",
-        "en": "Files waiting for review: {n}",
-    },
-    "rv_none": {
-        "kk": "Тексеруді күтіп тұрған құжат жоқ.",
-        "ru": "Нет документов, ожидающих проверки.",
-        "en": "No documents are waiting for review.",
-    },
-    "rv_ok": {"kk": "✅ Қабылдау", "ru": "✅ Принять", "en": "✅ Verify"},
-    "rv_no": {"kk": "❌ Қабылдамау", "ru": "❌ Отклонить", "en": "❌ Reject"},
-    "rv_back": {"kk": "⬅️ Артқа", "ru": "⬅️ Назад", "en": "⬅️ Back"},
-    "rv_done_ok": {"kk": "✅ Қабылданды · {who}", "ru": "✅ Принято · {who}", "en": "✅ Verified · {who}"},
-    "rv_done_no": {"kk": "❌ Қабылданбады: {reason} · {who}", "ru": "❌ Отклонено: {reason} · {who}", "en": "❌ Rejected: {reason} · {who}"},
-    "rv_stale": {
-        "kk": "Бұл файл ескірген немесе тексеріліп қойған.",
-        "ru": "Этот файл устарел или уже проверен.",
-        "en": "This file is outdated or has already been reviewed.",
-    },
-    "rv_denied": {
-        "kk": "Бұл әрекет тек қабылдау комиссиясына рұқсат етілген.",
-        "ru": "Это действие доступно только приёмной комиссии.",
-        "en": "Only admissions staff can do this.",
-    },
-}
+T: dict[str, dict[str, str]] = i18n.by_key("documents")  # locales/<lang>.json, section "documents"
 
-MENU = {"kk": "Құжат тапсыру", "ru": "Сдать документы", "en": "Submit documents"}
-HELP_LINE = {
-    "kk": "/documents — оқуға қабылдау құжаттарын тапсыру",
-    "ru": "/documents — сдать документы для зачисления",
-    "en": "/documents — submit enrollment documents",
-}
+MENU = T["menu"]
+HELP_LINE = T["help_line"]
 
 
 def t(key: str, lang: str) -> str:
@@ -303,7 +96,7 @@ def _local_time(iso: str) -> str:
         return iso
 
 
-SIZE_UNITS = {"kk": ("КБ", "МБ"), "ru": ("КБ", "МБ"), "en": ("KB", "MB")}
+SIZE_UNITS = {lang: tuple(units) for lang, units in T["size_units"].items()}
 
 
 def _mb(size: int | float) -> str:
