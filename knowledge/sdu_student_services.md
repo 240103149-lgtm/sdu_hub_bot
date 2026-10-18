@@ -3,6 +3,9 @@
 Sources, checked 18.10.2026: SSC / Office of the Registrar FAQ https://sdu.edu.kz/en/student-service-center-2/ ; Students page https://sdu.edu.kz/en/students/ ; Tuition fees page https://sdu.edu.kz/en/tuition-fees/
 This file is newer than SDU_01–SDU_03 (checked 19.09.2026). The portal is my.sdu.edu.kz; its inner pages need a login and are not described here except in registration_guide.md.
 
+## How to contact the administration (әкімшілікке қалай хабарласу / как связаться с администрацией)
+Start with the Student Service Center (SSC): ssc@sdu.edu.kz, weekdays 08:30–17:30, or the Advising Desk on campus. General university contacts: info@sdu.edu.kz, +7 (727) 307 95 65. Address: Kaskelen, Abylai Khan St. 1/1, Karasai district, Almaty region. For a specific topic (payment, dormitory, medical, international office, a school) use the email in the Contacts table below.
+
 ## Student Service Center (SSC) and Advising Desk
 - Open on weekdays 08:30–17:30. Email: ssc@sdu.edu.kz.
 - Replies to letters sent to the administration take 3–5 working days.

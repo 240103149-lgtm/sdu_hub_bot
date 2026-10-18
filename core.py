@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -179,6 +180,21 @@ Rules:
   (creating) the schedule - in Kazakh "расписание құру" or "сабақ кестесін құру",
   in Russian "составление расписания". Treat these phrases as the same thing and use
   the wording the student used. The menu item in the student portal is named "Course Registration".
+- FOLLOW-UP RULE: A short question often continues the conversation and refers
+  to the subject of the previous messages (for example "оған қалай барсам
+  болады?" / "how do I get there?" right after a question about the Medical
+  Center means the Medical Center's location; "қалай хабарласамын?" / "как
+  связаться?" right after you told the student to contact the administration
+  means the administration's contacts). Answer it about that subject.
+  Questions about how to contact the university, the administration, the SSC or
+  any office ARE about the university: answer with the matching contacts from
+  the knowledge base. If no office is named, give the Student Service Center
+  (SSC) and the general university contacts.
+- SOURCE RULE: Documents say when they were checked. If two documents disagree,
+  or an older one says a fact is "not confirmed" (не подтверждено / расталмаған)
+  while a newer one gives it, use the newer document and give the fact.
+- Questions about grades, scores or points (for example "less than 70 points")
+  are answered from the grading scale, FX/F rules and scholarship rules.
 - FALLBACK RULE: If the answer is not in the knowledge base, or the question is
   not about the university, reply with exactly this sentence and nothing else:
   "{not_found}"
@@ -442,7 +458,24 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
     flag = "  <-- slower than the US1 target" if elapsed > SLOW_RESPONSE else ""
     print(f"[core] answered in {elapsed:.1f}s (target {SLOW_RESPONSE:g}s){flag}")
 
-    return (response.text or "").strip() or msg("no_answer", reply_lang)
+    reply = (response.text or "").strip()
+    if not reply:
+        return msg("no_answer", reply_lang)
+    if is_not_found(reply):
+        # Keep the required US1 sentence, but never leave the student at a dead
+        # end: say whom to contact and how.
+        return f"{msg('not_found', reply_lang)}\n\n{msg('not_found_contacts', reply_lang)}"
+    return reply
+
+
+def _plain(text: str) -> str:
+    return " ".join(re.sub(r"[\W_]+", " ", text).casefold().split())
+
+
+def is_not_found(reply: str) -> bool:
+    """True when the model answered with the fallback sentence (in any language)."""
+    plain = _plain(reply)
+    return any(plain == _plain(msg("not_found", lang)) for lang in LANGS)
 
 
 async def answer_async(

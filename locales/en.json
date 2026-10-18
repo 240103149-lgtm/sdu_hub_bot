@@ -9,6 +9,7 @@
     "unexpected": "An unexpected error occurred (the exact cause is in the terminal).",
     "no_answer": "I couldn't produce an answer. Try rephrasing your question.",
     "not_found": "I don't have this information, please contact the administration.",
+    "not_found_contacts": "Contacts: Student Service Center (SSC) — ssc@sdu.edu.kz, weekdays 08:30–17:30. General questions: info@sdu.edu.kz, +7 (727) 307 95 65.",
     "schedule_missing": "Classroom availability is temporarily unavailable. Please try again.",
     "guide_missing": "Guide not available for this semester. Please contact the Registrar's office.",
     "guide_error": "Registration guide is temporarily unavailable. Please try again."
