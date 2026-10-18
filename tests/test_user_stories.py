@@ -12,7 +12,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -323,6 +323,59 @@ class US4EventsFlowTests(BotHarness):
             await self.text('/events')
         self.assertEqual(self.last_text(), 'Event information has not been published yet.')
         self.ai.assert_not_awaited()
+
+
+def semester_with_unpublished_grades():
+    import grade
+    return grade.Semester('2026 - 2027. 1', courses=[
+        grade.Course('CSS 217', 'Software Architecture', '3', '5', '91', 'A-', '3.67', ''),
+        grade.Course('CSS 301', 'Machine Learning', '3', '5', '', '', '', ''),
+        grade.Course('MAT 251', 'Statistics', '3', '5', '', 'IP', '', ''),
+    ], ects='15', spa='3.67', gpa='3.50')
+
+
+class US5GradesTests(BotHarness):
+    """US5 View grades and academic transcript."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        import grade_bot
+        names = patch.object(grade_bot, '_translate_names',
+                             new=AsyncMock(side_effect=lambda names, lang: {n: n for n in names}))
+        self.patches.append(names)
+        names.start()
+        self.app.user_data[42]['portal'] = {'student_id': '240103149', 'cookies': {}}
+
+    async def test_unpublished_grade_is_labelled_not_zero(self):
+        import grade_bot
+        with patch.object(grade_bot.grade, 'fetch_transcript', new=AsyncMock(return_value=[semester_with_unpublished_grades()])):
+            await self.text('/grade')
+        page = self.last_text()
+        self.assertIn('<b>CSS 217</b> | Software Architecture | 5 ECTS | <b>A-</b>', page)
+        self.assertIn('<b>CSS 301</b> | Machine Learning | 5 ECTS | <i>Not published</i>', page)
+        self.assertIn('<b>MAT 251</b> | Statistics | 5 ECTS | <i>Not published</i>', page)
+        self.assertNotIn('| <b>0</b>', page)
+        self.assertIn('GPA 3.50', page)
+
+    async def test_service_failure_offers_retry_and_empty_record_is_explained(self):
+        import grade_bot
+        failing = AsyncMock(side_effect=grade_bot.PortalError('unavailable'))
+        with patch.object(grade_bot.grade, 'fetch_transcript', new=failing):
+            await self.text('/grade')
+        self.assertEqual(self.last_text(), 'Academic records are temporarily unavailable. Please try again.')
+        self.assertEqual(self.last_buttons(), [[('🔄 Retry', 'gr:retry')]])
+        self.assertIn('portal', self.app.user_data[42])  # a failure does not sign the student out
+        grade_bot._CACHE[42] = (time.monotonic(), [])  # an older, empty result must not be reused
+        recovered = AsyncMock(return_value=[semester_with_unpublished_grades()])
+        with patch.object(grade_bot.grade, 'fetch_transcript', new=recovered):
+            await self.tap('gr:retry')
+        recovered.assert_awaited_once()
+        self.assertIn('Software Architecture', self.last_edit())
+
+        grade_bot._CACHE.clear()
+        with patch.object(grade_bot.grade, 'fetch_transcript', new=AsyncMock(return_value=[])):
+            await self.text('/grade')
+        self.assertEqual(self.last_text(), 'No academic records available.')
 
 
 if __name__ == '__main__':

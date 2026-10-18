@@ -28,6 +28,7 @@ class BotHarness(unittest.IsolatedAsyncioTestCase):
     LANG = 'en'
 
     async def asyncSetUp(self):
+        grade_bot._CACHE.clear()
         self.temp = tempfile.TemporaryDirectory()
         self.patches = []
 
@@ -80,6 +81,7 @@ class BotHarness(unittest.IsolatedAsyncioTestCase):
             p.stop()
         deadline_bot.ACTIVE.clear()
         grade_bot.PENDING.clear()
+        grade_bot._CACHE.clear()  # transcripts must not leak between tests
         self.temp.cleanup()
 
     # ---------------------------------------------------------------- input ----

@@ -45,7 +45,7 @@ import core
 import grade
 import i18n
 from grade import PortalError
-from telegram_bot import BOT, COMMAND_LABELS, keep_typing, user_lang
+from telegram_bot import BOT, COMMAND_LABELS, keep_typing, retry_keyboard, user_lang
 
 CHOOSE, ASK_ID, ASK_PASSWORD, ASK_CODE = range(4)
 
@@ -330,7 +330,11 @@ def _title(sem: grade.Semester, lang: str) -> str:
 def _render(
     sem: grade.Semester, index: int, total: int, lang: str, names: dict[str, str] | None = None
 ) -> str:
-    """One line per course:  📌 CSS 217 | Software Architecture | 5 ECTS | B+"""
+    """One line per course:  📌 CSS 217 | Software Architecture | 5 ECTS | B+
+
+    US5: a grade the portal has not published yet (empty, or "IP" - in
+    progress) is labelled "Not published"; it is never shown as a zero.
+    """
     names = names or {}
     lines = [f"📊 <b>{_e(_title(sem, lang))}</b>  ({index + 1}/{total})", ""]
     for course in sem.courses:
@@ -338,8 +342,10 @@ def _render(
         parts = [f"<b>{_e(course.code)}</b>", _e(names.get(course.name, course.name))]
         if course.ects:
             parts.append(f"{_e(course.ects)} ECTS")
-        if mark:
+        if mark and mark.upper() != "IP":
             parts.append(f"<b>{_e(mark)}</b>")
+        else:
+            parts.append(f"<i>{_e(t('not_published', lang))}</i>")
         lines.append("📌 " + " | ".join(parts))
 
     totals = [
@@ -378,6 +384,14 @@ def _keyboard(index: int, total: int, lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def _records_error(exc: PortalError, lang: str) -> tuple[str, InlineKeyboardMarkup | None]:
+    """A temporary failure gets the US5 message and Retry; it is never shown
+    as an empty transcript."""
+    if exc.key == "unavailable":
+        return t("records_unavailable", lang), retry_keyboard("gr:retry", lang)
+    return _error_text(exc, lang), None
+
+
 async def _show_grades(update: Update, context: ContextTypes.DEFAULT_TYPE, lang: str) -> None:
     """/grade for a linked student: open the latest semester."""
     typing = asyncio.create_task(keep_typing(context.bot, update.effective_chat.id))
@@ -388,7 +402,8 @@ async def _show_grades(update: Update, context: ContextTypes.DEFAULT_TYPE, lang:
         if exc.key == "session_expired":
             context.user_data.pop("portal", None)
             _CACHE.pop(update.effective_user.id, None)
-        await update.effective_message.reply_text(_error_text(exc, lang))
+        text, retry = _records_error(exc, lang)
+        await update.effective_message.reply_text(text, reply_markup=retry)
         return
     except Exception as exc:  # noqa: BLE001
         print(f"[grade] unexpected error while reading grades: {exc!r}")
@@ -413,18 +428,20 @@ async def on_grade_nav(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not context.user_data.get("portal"):
         await query.edit_message_text(t("not_linked", lang))
         return
+    arg = query.data.split(":", 1)[1]
     try:
-        semesters = await _load_semesters(context, update.effective_user.id)
+        # Retry after a failure always asks the portal again instead of the cache.
+        semesters = await _load_semesters(context, update.effective_user.id, force=arg == "retry")
         page = None
         if semesters:
-            arg = query.data.split(":", 1)[1]
-            index = len(semesters) - 1 if arg == "now" else min(int(arg), len(semesters) - 1)
+            index = len(semesters) - 1 if arg in ("now", "retry") else min(int(arg), len(semesters) - 1)
             page = await _page(semesters, index, lang)
     except PortalError as exc:
         if exc.key == "session_expired":
             context.user_data.pop("portal", None)
             _CACHE.pop(update.effective_user.id, None)
-        await query.edit_message_text(_error_text(exc, lang))
+        text, retry = _records_error(exc, lang)
+        await query.edit_message_text(text, reply_markup=retry)
         return
     except Exception as exc:  # noqa: BLE001
         print(f"[grade] unexpected error while flipping semesters: {exc!r}")
@@ -456,5 +473,5 @@ def register_grade(app: Application) -> None:
         if "/grade" not in help_text:
             BOT[lang]["help"] = help_text.replace("/lang", f"{HELP_LINE[lang]}\n/lang", 1)
 
-    app.add_handler(CallbackQueryHandler(on_grade_nav, pattern=r"^gr:(now|\d+)$"))
+    app.add_handler(CallbackQueryHandler(on_grade_nav, pattern=r"^gr:(now|retry|\d+)$"))
     app.add_handler(CommandHandler("unlink", cmd_unlink))
