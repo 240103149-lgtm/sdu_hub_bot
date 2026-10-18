@@ -378,5 +378,144 @@ class US5GradesTests(BotHarness):
         self.assertEqual(self.last_text(), 'No academic records available.')
 
 
+class FakePortal:
+    """grade.PortalLogin stand-in. `password_ok` decides the outcome; counts logins."""
+    password_ok = True
+    created = 0
+
+    def __init__(self, *args, **kwargs):
+        FakePortal.created += 1
+
+    async def submit_credentials(self, student_id, password):
+        import grade
+        if not FakePortal.password_ok:
+            raise grade.PortalError('bad_credentials')
+        return False
+
+    def cookies(self):
+        return {'session': 'cookie'}
+
+    async def close(self):
+        pass
+
+
+class US7AuthenticationTests(BotHarness):
+    """US7 Student system authentication."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        import grade_bot
+        FakePortal.created, FakePortal.password_ok = 0, True
+        portal = patch.object(grade_bot.grade, 'PortalLogin', FakePortal)
+        self.patches.append(portal)
+        portal.start()
+
+    def edited_texts(self):
+        return [c.kwargs.get('text', '') for c in self.edit.call_args_list]
+
+    async def sign_in(self, command='/grade', student_id='240103149', password='secret'):
+        await self.text(command)
+        await self.tap({'/grade': 'grade:register', '/login': 'login:signin'}[command])
+        await self.text(student_id)
+        await self.text(password)
+
+    async def test_five_wrong_passwords_lock_the_account(self):
+        FakePortal.password_ok = False
+        for left in (4, 3, 2, 1):
+            await self.sign_in()
+            self.assertEqual(self.edited_texts()[-1],
+                             f'Invalid credentials: wrong student number or password. Try again with /grade. Attempts left: {left}.')
+        await self.sign_in()
+        locked = 'Account temporarily locked: 5 failed sign-in attempts in a row. Try again in 15 min.'
+        self.assertEqual(self.edited_texts()[-1], locked)
+        self.assertEqual(FakePortal.created, 5)
+
+        FakePortal.password_ok = True  # even the right password must wait now
+        await self.text('/grade')
+        await self.tap('grade:register')
+        await self.text('240103149')
+        self.assertEqual(self.last_text(), locked)
+        self.assertEqual(FakePortal.created, 5)  # the portal was not contacted
+        self.assertNotIn('login_flow', self.app.user_data[42])
+        self.assertNotIn('portal', self.app.user_data[42])
+
+        entry = self.app.bot_data['login_failures']['portal:240103149']
+        entry['until'] = time.time() - 1  # the 15 minutes are over
+        await self.sign_in()
+        self.assertEqual(self.app.user_data[42]['portal']['student_id'], '240103149')
+        self.assertNotIn('portal:240103149', self.app.bot_data['login_failures'])
+        self.ai.assert_not_awaited()
+
+    async def test_success_resets_the_counter_and_other_accounts_are_separate(self):
+        FakePortal.password_ok = False
+        await self.sign_in(student_id='111')
+        await self.sign_in(student_id='111')
+        await self.sign_in(student_id='222')
+        self.assertTrue(self.edited_texts()[-1].endswith('Attempts left: 4.'))
+        FakePortal.password_ok = True
+        await self.sign_in(student_id='111')
+        self.app.user_data[42].pop('portal')
+        FakePortal.password_ok = False
+        await self.sign_in(student_id='111')
+        self.assertTrue(self.edited_texts()[-1].endswith('Attempts left: 4.'))
+
+    async def test_login_command_opens_the_main_menu(self):
+        await self.text('/login')
+        self.assertIn('Sign in to SDU Hub', self.last_text())
+        self.assertEqual(self.last_buttons(), [[('🔐 Sign in', 'login:signin'), ('✖️ Cancel', 'login:cancel')]])
+        with patch('builtins.print') as printed:
+            await self.tap('login:signin')
+            self.assertIn('student number', self.last_edit())
+            await self.text('240103149')
+            await self.text('secret-password')
+        self.assertEqual(self.last_text(),
+                         '✅ Signed in as 240103149. Your personal features, such as grades and documents, '
+                         'are now available. Sign out: /unlink')
+        menu = [data for row in self.last_buttons() for _, data in row]
+        self.assertIn('menu:grade', menu)
+        self.assertIn('menu:documents', menu)
+        timing = [str(call.args[0]) for call in printed.call_args_list if '[auth]' in str(call.args[0])]
+        self.assertTrue(any('portal password check' in line and '(target 3s)' in line for line in timing), timing)
+        self.assertNotIn('secret-password', repr(dict(self.app.user_data[42])))
+        self.assertTrue(self.delete.await_count >= 1)  # the password message was deleted
+
+        await self.text('/login')
+        self.assertEqual(self.last_text(), "You're already signed in as 240103149. Sign out: /unlink")
+        self.ai.assert_not_awaited()
+
+    async def test_login_cancel_wrong_password_hint_and_group_chat(self):
+        await self.text('/login')
+        await self.tap('login:cancel')
+        self.assertEqual(self.last_edit(), 'Sign-in cancelled. Send /login to start again.')
+        self.assertNotIn('login_flow', self.app.user_data[42])
+        FakePortal.password_ok = False
+        await self.sign_in(command='/login')
+        self.assertIn('Try again with /login.', self.edited_texts()[-1])
+        await self.text('/login', user_id=-100, chat_type='group')
+        self.assertIn('private chat', self.last_text())
+        names = [name for name, _ in telegram_bot.COMMAND_LABELS['en']]
+        self.assertIn('login', names)
+        self.assertIn('/login — sign in with your university ID', telegram_bot.text('start', 'en'))
+
+    async def test_moodle_sign_in_is_protected_too(self):
+        import moodle
+        failing = AsyncMock(side_effect=moodle.MoodleError('bad_credentials'))
+        with patch.object(moodle, 'login', new=failing):
+            for _ in range(5):
+                await self.text('/deadline')
+                await self.tap('deadline:register')
+                await self.text('moodle-user')
+                await self.text('wrong')
+        self.assertEqual(self.edited_texts()[-1],
+                         'Account temporarily locked: 5 failed sign-in attempts in a row. Try again in 15 min.')
+        failures = [text for text in self.edited_texts() if text.startswith('Invalid credentials')]
+        self.assertEqual([text.rsplit(' ', 1)[1] for text in failures], ['4.', '3.', '2.', '1.'])
+        await self.text('/deadline')
+        await self.tap('deadline:register')
+        await self.text('MOODLE-USER')  # the same account, whatever the letter case
+        self.assertTrue(self.last_text().startswith('Account temporarily locked'))
+        self.assertEqual(failing.await_count, 5)
+
+
 if __name__ == '__main__':
     unittest.main()

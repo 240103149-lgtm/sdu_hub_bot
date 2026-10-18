@@ -44,6 +44,7 @@ from telegram.ext import (
 import core
 import grade
 import i18n
+import login_guard
 from grade import PortalError
 from telegram_bot import BOT, COMMAND_LABELS, keep_typing, retry_keyboard, user_lang
 
@@ -65,7 +66,9 @@ def t(key: str, lang: str) -> str:
 
 
 def _error_text(exc: PortalError, lang: str) -> str:
-    return t(exc.key, lang) if exc.key in G else core.msg("unexpected", lang)
+    if exc.key not in G:
+        return core.msg("unexpected", lang)
+    return t(exc.key, lang).replace("{command}", "/grade")
 
 
 # ------------------------------------------------------- pending sign-ins ----
@@ -152,9 +155,27 @@ async def on_student_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await update.effective_message.reply_text(t("invalid_id", lang))
         return ASK_ID
 
+    locked = login_guard.locked_for(context.bot_data, "portal", value)
+    if locked:  # US7: no password is asked for, and the portal is not contacted
+        await update.effective_message.reply_text(login_guard.locked_text(lang, locked))
+        return ConversationHandler.END
+
     context.user_data["grade_sid"] = value
     await update.effective_message.reply_text(t("ask_password", lang))
     return ASK_PASSWORD
+
+
+# The command a student sends to try again, for each sign-in that uses the portal.
+RETRY_COMMANDS = {"documents": "/documents", "login": "/login"}
+
+
+def _bad_credentials(context: ContextTypes.DEFAULT_TYPE, student_id: str, lang: str) -> str:
+    """US7: "Invalid credentials", the attempts left - or the lock message."""
+    left = login_guard.record_failure(context.bot_data, "portal", student_id)
+    if not left:
+        return login_guard.locked_text(lang, login_guard.LOCK_SECONDS)
+    command = RETRY_COMMANDS.get(context.user_data.get("login_flow"), "/grade")
+    return f"{t('bad_credentials', lang).format(command=command)} {login_guard.attempts_text(lang, left)}"
 
 
 async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -168,15 +189,24 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await context.bot.send_message(update.effective_chat.id, t("session_lost", lang))
         return ConversationHandler.END
 
+    locked = login_guard.locked_for(context.bot_data, "portal", student_id)
+    if locked:
+        await context.bot.send_message(update.effective_chat.id, login_guard.locked_text(lang, locked))
+        return ConversationHandler.END
+
     await _drop_pending(user_id)
     status = await context.bot.send_message(update.effective_chat.id, t("logging_in", lang))
     typing = asyncio.create_task(keep_typing(context.bot, update.effective_chat.id))
     login = grade.PortalLogin()
+    started = time.monotonic()
     try:
         needs_code = await login.submit_credentials(student_id, password)
     except PortalError as exc:
         await login.close()
-        await status.edit_text(_error_text(exc, lang))
+        if exc.key == "bad_credentials":
+            await status.edit_text(_bad_credentials(context, student_id, lang))
+        else:
+            await status.edit_text(_error_text(exc, lang))
         return ConversationHandler.END
     except Exception as exc:  # noqa: BLE001 - the student still gets an answer
         await login.close()
@@ -187,6 +217,8 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         typing.cancel()
         password = ""  # never kept longer than this request
 
+    login_guard.log_timing("portal", "password check", time.monotonic() - started)
+    login_guard.record_success(context.bot_data, "portal", student_id)
     if needs_code:
         PENDING[user_id] = _Pending(login=login, student_id=student_id)
         await status.edit_text(t("ask_code", lang))
@@ -211,8 +243,10 @@ async def on_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     typing = asyncio.create_task(keep_typing(context.bot, update.effective_chat.id))
+    started = time.monotonic()
     try:
         await pending.login.submit_code(code)
+        login_guard.log_timing("portal", "e-mail code check", time.monotonic() - started)
     except PortalError as exc:
         if exc.key == "bad_code":
             pending.attempts += 1

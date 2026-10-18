@@ -16,6 +16,7 @@ import deadline_bot as deadline
 import documents_bot as docs
 import grade_bot as grade
 import i18n
+import login_bot as login
 import telegram_bot as bot
 
 FLOW_TTL = 600
@@ -24,7 +25,7 @@ A = i18n.by_key("accounts")  # locales/<lang>.json, section "accounts"
 
 def texts_for(feature):
     """The module whose t() words the sign-in messages of this feature."""
-    return {"deadline": deadline, "documents": docs}.get(feature, grade)
+    return {"deadline": deadline, "documents": docs, "login": login}.get(feature, grade)
 
 
 async def clear_login(update, context):
@@ -62,9 +63,11 @@ def step(callback):
         state = await callback(update, context)
         if state == ConversationHandler.END:
             await clear_login(update, context)
-            # /documents asked for the portal sign-in first: continue there once linked.
+            # Signed in through /documents or /login: continue there.
             if feature == "documents" and context.user_data.get("portal"):
                 await docs.show_documents(update, context)
+            elif feature == "login" and context.user_data.get("portal"):
+                await login.after_login(update, context)
         return state
     return run
 
@@ -125,11 +128,13 @@ def register_accounts(app):
             CommandHandler("grade", entry("grade", grade.cmd_grade), filters=private),
             CommandHandler(["deadline", "deadlines"], entry("deadline", deadline.cmd_deadline), filters=private),
             CommandHandler("documents", entry("documents", docs.cmd_documents), filters=private),
+            CommandHandler("login", entry("login", login.cmd_login), filters=private),
         ],
         states={
             grade.CHOOSE: [
                 CallbackQueryHandler(step(grade.on_choice), pattern=r"^grade:(register|cancel)$"),
                 CallbackQueryHandler(step(docs.on_signin_choice), pattern=r"^docs:(signin|nosignin)$"),
+                CallbackQueryHandler(step(login.on_choice), pattern=r"^login:(signin|cancel)$"),
             ],
             grade.ASK_ID: [MessageHandler(only_text, step(grade.on_student_id))],
             grade.ASK_PASSWORD: [MessageHandler(only_text, step(grade.on_password))],
@@ -149,7 +154,8 @@ def register_accounts(app):
     ))
     grade.register_grade(app)
     deadline.register_deadline(app)
-    app.add_handler(CommandHandler(["grade", "deadline", "deadlines", "documents"], private_only, filters=~private))
+    app.add_handler(CommandHandler(["grade", "deadline", "deadlines", "documents", "login"], private_only, filters=~private))
     app.add_handler(CommandHandler("cancel", cancel))
     for name in ("unlink", "unlink_moodle", "cancel"):
         bot.add_command(name, A[f"{name}_menu"], A[f"{name}_help"])
+    bot.add_command("login", login.T["menu"], login.T["help_line"])

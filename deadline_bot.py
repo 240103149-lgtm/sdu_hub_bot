@@ -42,6 +42,7 @@ from telegram.ext import (
 
 import core
 import i18n
+import login_guard
 import moodle
 from moodle import MoodleError
 from telegram_bot import BOT, COMMAND_LABELS, keep_typing, user_lang, tg_len
@@ -255,6 +256,12 @@ async def on_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await update.effective_message.reply_text(t("invalid_user", lang))
         return ASK_USER
 
+    locked = login_guard.locked_for(context.bot_data, "moodle", value)
+    if locked:  # US7: no password is asked for, and Moodle is not contacted
+        _close_flow(update.effective_user.id, context)
+        await update.effective_message.reply_text(login_guard.locked_text(lang, locked))
+        return ConversationHandler.END
+
     context.user_data["deadline_user"] = value
     await update.effective_message.reply_text(t("ask_pass", lang))
     return ASK_PASS
@@ -272,13 +279,26 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await context.bot.send_message(chat_id, t("session_lost", lang))
         return ConversationHandler.END
 
+    locked = login_guard.locked_for(context.bot_data, "moodle", username)
+    if locked:
+        _close_flow(user_id, context)
+        await context.bot.send_message(chat_id, login_guard.locked_text(lang, locked))
+        return ConversationHandler.END
+
     status = await context.bot.send_message(chat_id, t("logging_in", lang))
     typing = asyncio.create_task(keep_typing(context.bot, chat_id))
+    started = time.monotonic()
     try:
         session = await moodle.login(username, password)
+        login_guard.log_timing("moodle", "sign-in", time.monotonic() - started)
     except MoodleError as exc:
         _close_flow(user_id, context)
-        await status.edit_text(_error_text(exc, lang))
+        text = _error_text(exc, lang)
+        if exc.key == "bad_credentials":  # US7: count it; lock after too many
+            left = login_guard.record_failure(context.bot_data, "moodle", username)
+            text = f"{text} {login_guard.attempts_text(lang, left)}" if left else login_guard.locked_text(
+                lang, login_guard.LOCK_SECONDS)
+        await status.edit_text(text)
         return ConversationHandler.END
     except Exception as exc:  # noqa: BLE001
         _close_flow(user_id, context)
@@ -289,6 +309,7 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         typing.cancel()
         password = ""  # never kept longer than this request
 
+    login_guard.record_success(context.bot_data, "moodle", username)
     context.user_data["moodle"] = session
     _close_flow(user_id, context)
     await status.edit_text(t("linked_ok", lang))
