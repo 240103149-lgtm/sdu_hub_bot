@@ -12,7 +12,8 @@
     "not_found_contacts": "Contacts: Student Service Center (SSC) — ssc@sdu.edu.kz, weekdays 08:30–17:30. General questions: info@sdu.edu.kz, +7 (727) 307 95 65.",
     "schedule_missing": "Classroom availability is temporarily unavailable. Please try again.",
     "guide_missing": "Guide not available for this semester. Please contact the Registrar's office.",
-    "guide_error": "Registration guide is temporarily unavailable. Please try again."
+    "guide_error": "Registration guide is temporarily unavailable. Please try again.",
+    "source_label": "Source:"
   },
   "bot": {
     "start": "Hi, {name}! 👋\n\nI'm **SDU Hub**, your student-life assistant. I can help you check deadlines, find a free room and discover campus events.\n\n**📚 Study**\n/deadline — Moodle assignment deadlines\n/grade — your grades\n/guide — how to create your course schedule\n\n**🏫 Campus**\n/events — university events\n/rooms — free classrooms\nYou can also choose a time: /rooms 14:30\n\n**🎓 Enrollment**\n/documents — submit your enrollment documents\n\n**⚙️ Settings**\n/login — sign in with your university ID\n/lang — Қазақша / Русский / English\n/help — all commands and help\n\n💬 Have a question? Just type it:\n“How do I create my schedule?”\n\nChoose a button below to get started 👇",
@@ -272,7 +273,20 @@
     "size_units": [
       "KB",
       "MB"
-    ]
+    ],
+    "checking": "🔎 Checking that the file is «{doc}»…",
+    "check_ok": "🤖 Checked: the file looks like «{doc}».",
+    "check_wrong": "❌ This file doesn't look like «{doc}» — it looks like {kind}. It was not saved. Please send «{doc}».",
+    "check_unclear": "⚠️ I can't see this file clearly enough to confirm it is «{doc}». It was not saved. Please send a sharp, well-lit photo or a scan of the whole document.",
+    "check_unavailable": "⚠️ The automatic check is not available right now, so the admissions office will check this file by hand.",
+    "kind_passport": "a passport",
+    "kind_identity_card": "an identity card",
+    "kind_student_id_card": "a student ID card",
+    "kind_timetable": "a class timetable",
+    "kind_payment_receipt": "a payment receipt",
+    "kind_portrait_photo": "a portrait photo",
+    "kind_other_document": "a different document",
+    "kind_not_a_document": "a picture, not a document"
   },
   "web": {
     "title": "University Knowledge Hub",
@@ -305,5 +319,18 @@
     "session_lost": "The sign-in session expired (over 10 minutes). Start again with /login.",
     "signed_in": "✅ Signed in as {id}. Your personal features, such as grades and documents, are now available. Sign out: /unlink",
     "already": "You're already signed in as {id}. Sign out: /unlink"
+  },
+  "assistant": {
+    "need_portal": "🔐 To answer this I need your university portal (my.sdu.edu.kz) account. Sign in once: your password goes only to the portal, is never stored, and its message is deleted right away. After you sign in, I'll answer your question automatically.",
+    "need_moodle": "🔐 To answer this I need your Moodle (moodle.sdu.edu.kz) account. Sign in once: your password goes only to Moodle, is never stored, and its message is deleted right away. After you sign in, I'll answer your question automatically.",
+    "signin_portal": "🔐 Sign in to the university portal (my.sdu.edu.kz): your password goes only to the portal, is never stored, and its message is deleted right away.",
+    "signin_moodle": "🔐 Sign in to Moodle (moodle.sdu.edu.kz): your password goes only to Moodle, is never stored, and its message is deleted right away.",
+    "btn_signin": "🔐 Sign in",
+    "btn_later": "✖️ Not now",
+    "later": "Okay. Ask me again whenever you like.",
+    "continuing": "✅ Now, your question: «{question}»",
+    "private_data": "🔒 Personal data (grades, deadlines, documents) is shown only in a private chat with the bot.",
+    "docs_title": "📄 **Enrollment documents** · {track}",
+    "btn_submit_docs": "📄 Submit documents"
   }
 }

@@ -5,7 +5,9 @@
       |                           accounts_bot), then the checklist opens
       |- no track yet ........... [🎓 State grant] [💳 Tuition-based]
       '- checklist .............. a button per document, [📤 Submit]
-            tap a document, send the file -> format and size are checked
+            tap a document, send the file -> format and size are checked, then
+                the AI checks that it IS that document (doc_check.py): another
+                document or an unreadable photo is refused and not saved
             Submit -> "Please upload the missing document: ..." (blocked)
                    or "Submission successful" -> admissions staff notified
 
@@ -17,6 +19,7 @@ The rules, statuses and the database live in documents.py.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
 import time
@@ -38,12 +41,13 @@ from telegram.ext import (
 )
 
 import core
+import doc_check
 import documents
 import i18n
 import grade_bot
 from documents import MISSING, REJECTED, UNDER_REVIEW, UPLOADED, VERIFIED
 from rooms import CAMPUS_TZ
-from telegram_bot import add_command, on_unsupported, render_chunks, user_lang
+from telegram_bot import add_command, keep_typing, on_unsupported, render_chunks, user_lang
 
 UPLOAD_TTL = 600     # seconds a chosen document waits for its file
 REVIEW_BATCH = 30    # files /review sends at once
@@ -433,6 +437,10 @@ async def on_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _send(context.bot, chat_id, text)
         return
 
+    verdict = await _check_type(context, chat_id, catalog, doc, item.file_id, file_name, mime_type, lang)
+    if verdict.outcome in ("wrong", "unclear"):
+        return  # not saved; the document stays chosen, so the right file can follow
+
     submission = documents.store().save(
         catalog, student_id, chat_id, doc.id,
         kind=kind, file_id=item.file_id, file_name=file_name, mime_type=mime_type, file_size=item.file_size,
@@ -441,6 +449,54 @@ async def on_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     saved = t("saved", lang).format(doc=doc.label(lang), file=_file_label(file_name, item.file_size, kind, lang))
     text = f"{saved}\n\n{checklist_text(catalog, submission, lang)}"
     await _send(context.bot, chat_id, text, checklist_keyboard(catalog, submission, lang))
+
+
+AI_MIME = {"pdf": "application/pdf", "jpg": "image/jpeg", "png": "image/png"}
+
+
+def _kind_name(detected: str | None, catalog: documents.Catalog, lang: str) -> str:
+    """What the file looks like instead: 'a passport', or «School certificate» for
+    another checklist document."""
+    if detected and f"kind_{detected}" in T:
+        return t(f"kind_{detected}", lang)
+    other = catalog.get(detected or "")
+    return f"«{other.label(lang)}»" if other else t("kind_other_document", lang)
+
+
+async def _check_type(context, chat_id: int, catalog, doc, file_id: str, file_name, mime_type, lang: str):
+    """The AI check of WHAT the file is (doc_check.py). Shows "Checking…" and
+    replaces it with the result. The file is downloaded into memory only, for
+    this check; nothing read from it is stored or logged."""
+    if not doc_check.enabled():
+        return doc_check.Verdict("off")
+    status = await context.bot.send_message(chat_id, t("checking", lang).format(doc=doc.label(lang)))
+    typing = asyncio.create_task(keep_typing(context.bot, chat_id))
+    try:
+        telegram_file = await context.bot.get_file(file_id)
+        data = bytes(await telegram_file.download_as_bytearray())
+        mime = AI_MIME[documents.file_format(file_name, mime_type)]
+        verdict = await asyncio.to_thread(doc_check.check, data, mime, doc, catalog)
+        del data
+    except TelegramError as exc:
+        print(f"[documents] could not download the file for the AI check: {exc}")
+        verdict = doc_check.Verdict("unavailable")
+    finally:
+        typing.cancel()
+
+    name = doc.label(lang)
+    if verdict.outcome == "wrong":
+        text = t("check_wrong", lang).format(doc=name, kind=_kind_name(verdict.detected, catalog, lang))
+    elif verdict.outcome == "unclear":
+        text = t("check_unclear", lang).format(doc=name)
+    elif verdict.outcome == "unavailable":
+        text = t("check_unavailable", lang)
+    else:
+        text = t("check_ok", lang).format(doc=name)
+    try:
+        await status.edit_text(text)
+    except TelegramError:
+        await context.bot.send_message(chat_id, text)
+    return verdict
 
 
 async def on_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -614,3 +670,5 @@ def register_documents(app: Application) -> None:
     app.add_handler(MessageHandler(private & (filters.Document.ALL | filters.PHOTO), on_file))
     if not reviewer_ids():
         print("[documents] DOCUMENTS_REVIEWER_IDS is empty: submitted documents will wait for review")
+    if not doc_check.enabled():
+        print("[documents] the AI document check is off (no GEMINI_API_KEY): uploads are checked for format only")

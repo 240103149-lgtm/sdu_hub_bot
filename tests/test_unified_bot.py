@@ -137,7 +137,8 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
             self.errors.append(context.error)
         self.app.add_error_handler(error_handler)
         self.counter = 0
-        self.ai_patch = patch.object(telegram_bot.core, 'answer_async', new=AsyncMock(return_value='AI answer'))
+        import assistant
+        self.ai_patch = patch.object(assistant, 'run', new=AsyncMock(return_value=assistant.Answer(text='AI answer', lang='kk')))
         self.ai = self.ai_patch.start()
 
     async def asyncTearDown(self):

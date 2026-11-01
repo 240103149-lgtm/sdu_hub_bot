@@ -18,7 +18,9 @@ from unittest.mock import AsyncMock, patch
 from telegram import Chat, Message, Update, User
 from telegram.ext import ExtBot
 
+import assistant
 import deadline_bot
+import doc_check
 import documents
 import grade_bot
 import telegram_bot
@@ -56,12 +58,19 @@ class BotHarness(unittest.IsolatedAsyncioTestCase):
             patch.object(telegram_bot, 'STATE_FILE', Path(self.temp.name) / 'state.pickle'),
             patch.object(documents, 'DB_PATH', Path(self.temp.name) / 'documents.db'),
             patch.dict(documents._stores, clear=True),
+            # Offline: an empty transcript after a sign-in (tests that need grades
+            # patch it again), course names untranslated, no AI document check.
+            patch.object(grade_bot.grade, 'fetch_transcript', new=AsyncMock(return_value=[])),
+            patch.object(grade_bot, '_translate_names',
+                         new=AsyncMock(side_effect=lambda names, lang: {n: n for n in names})),
+            patch.object(doc_check, 'enabled', return_value=False),
         ):
             self.patches.append(p)
             p.start()
-        ai = patch.object(telegram_bot.core, 'answer_async', new=AsyncMock(return_value='AI answer'))
-        self.patches.append(ai)
-        self.ai = ai.start()
+        # The AI assistant (every text message) answers with plain text, no tools.
+        self.ai_patcher = patch.object(assistant, 'run', new=AsyncMock(return_value=assistant.Answer(text='AI answer', lang='en')))
+        self.patches.append(self.ai_patcher)
+        self.ai = self.ai_patcher.start()
         self.app = telegram_bot.build_application()
         message.set_bot(self.app.bot)
         await self.app.initialize()

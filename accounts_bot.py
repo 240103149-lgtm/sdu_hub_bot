@@ -2,8 +2,14 @@
 
 Switching /grade <-> /deadline ends the previous login. Other bot commands
 also end it, then run normally. Passwords never reach the AI text handler.
-/documents (US8) uses the same portal sign-in when the portal isn't linked
-yet, and opens the document checklist as soon as the sign-in succeeds.
+
+After a successful sign-in the student's request continues by itself:
+/grade shows the grades, /deadline the deadlines, /documents the checklist,
+/login the personal menu - and a question the AI assistant could not answer
+without an account ("What are my grades?") is answered right away
+(assistant_bot.resume). The assistant's [🔐 Sign in] button (auth:portal /
+auth:moodle) enters this same conversation, so the password is only ever
+typed into these steps, whose messages are deleted.
 """
 from __future__ import annotations
 
@@ -25,7 +31,7 @@ A = i18n.by_key("accounts")  # locales/<lang>.json, section "accounts"
 
 def texts_for(feature):
     """The module whose t() words the sign-in messages of this feature."""
-    return {"deadline": deadline, "documents": docs, "login": login}.get(feature, grade)
+    return {"deadline": deadline, "assistant_moodle": deadline, "documents": docs, "login": login}.get(feature, grade)
 
 
 async def clear_login(update, context):
@@ -63,11 +69,16 @@ def step(callback):
         state = await callback(update, context)
         if state == ConversationHandler.END:
             await clear_login(update, context)
-            # Signed in through /documents or /login: continue there.
+            # Signed in: continue with what the student asked for.
             if feature == "documents" and context.user_data.get("portal"):
                 await docs.show_documents(update, context)
             elif feature == "login" and context.user_data.get("portal"):
                 await login.after_login(update, context)
+            elif feature == "grade" and context.user_data.get("portal"):
+                await grade.show_after_sign_in(update, context)
+            if feature in ("login", "assistant_portal", "assistant_moodle"):
+                from assistant_bot import resume  # a question waiting for this sign-in
+                await resume(update, context)
         return state
     return run
 
@@ -92,6 +103,27 @@ def leave(callback):
 
 async def private_only(update, context):
     await update.effective_message.reply_text(A["private_only"][bot.user_lang(update, context)])
+
+
+async def assistant_portal(update, context):
+    """[🔐 Sign in] under the AI assistant's offer: straight to the student number."""
+    if context.user_data.get("portal"):  # signed in meanwhile: just answer the question
+        from assistant_bot import resume
+        await resume(update, context)
+        return ConversationHandler.END
+    await update.callback_query.edit_message_text(grade.t("ask_id", bot.user_lang(update, context)))
+    return grade.ASK_ID
+
+
+async def assistant_moodle(update, context):
+    """The same for Moodle: straight to the Moodle username."""
+    if context.user_data.get("moodle"):
+        from assistant_bot import resume
+        await resume(update, context)
+        return ConversationHandler.END
+    deadline._open_flow(update.effective_user.id)
+    await update.callback_query.edit_message_text(deadline.t("ask_user", bot.user_lang(update, context)))
+    return deadline.ASK_USER
 
 
 def menu_entry(feature, callback):
@@ -125,6 +157,8 @@ def register_accounts(app):
             CallbackQueryHandler(menu_entry("grade", grade.cmd_grade), pattern=r"^menu:grade$"),
             CallbackQueryHandler(menu_entry("deadline", deadline.cmd_deadline), pattern=r"^menu:deadline$"),
             CallbackQueryHandler(menu_entry("documents", docs.cmd_documents), pattern=r"^menu:documents$"),
+            CallbackQueryHandler(menu_entry("assistant_portal", assistant_portal), pattern=r"^auth:portal$"),
+            CallbackQueryHandler(menu_entry("assistant_moodle", assistant_moodle), pattern=r"^auth:moodle$"),
             CommandHandler("grade", entry("grade", grade.cmd_grade), filters=private),
             CommandHandler(["deadline", "deadlines"], entry("deadline", deadline.cmd_deadline), filters=private),
             CommandHandler("documents", entry("documents", docs.cmd_documents), filters=private),

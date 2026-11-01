@@ -166,7 +166,7 @@ async def on_student_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 
 # The command a student sends to try again, for each sign-in that uses the portal.
-RETRY_COMMANDS = {"documents": "/documents", "login": "/login"}
+RETRY_COMMANDS = {"documents": "/documents", "login": "/login", "assistant_portal": "/login"}
 
 
 def _bad_credentials(context: ContextTypes.DEFAULT_TYPE, student_id: str, lang: str) -> str:
@@ -451,6 +451,12 @@ async def _show_grades(update: Update, context: ContextTypes.DEFAULT_TYPE, lang:
         return
     text, keyboard = page
     await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+
+
+async def show_after_sign_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/grade continues by itself once the sign-in succeeds: the student does
+    not have to send /grade again to see the grades."""
+    await _show_grades(update, context, user_lang(update, context))
 
 
 async def on_grade_nav(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -7,6 +7,10 @@ Covers the same user stories as the website, using the shared `core` module:
     US3  /guide - the step-by-step course registration guide
     US6  Kazakh / Russian / English interface
 
+Every text message goes to the AI assistant (assistant_bot.py), which can also
+use the commands' features itself - so "What deadlines do I have?" works
+without typing /deadline. The commands keep working as before.
+
 This module only builds the Application. Run it with `python bot.py`
 (long polling) or let main.py serve it over a webhook.
 """
@@ -408,31 +412,12 @@ async def on_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def on_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """US5: answer a free-text question from the approved knowledge base."""
-    lang = user_lang(update, context)
-    question = (update.message.text or "").strip()
-    if not question:
-        return
+    """US1 and every service in plain words: the AI assistant answers from the
+    knowledge base or opens the student's grades, deadlines, free rooms, events,
+    the guide or the documents itself (assistant_bot.py)."""
+    from assistant_bot import answer_question
 
-    history: list[dict[str, str]] = context.user_data.setdefault("history", [])
-    typing = asyncio.create_task(keep_typing(context.bot, update.effective_chat.id))
-    try:
-        answer = await core.answer_async(question, history, lang)
-    except core.AssistantError as exc:
-        await update.message.reply_text(exc.localized(lang))
-        return
-    except Exception as exc:  # noqa: BLE001 - the student still gets an answer
-        print(f"[bot] unexpected error: {exc!r}")
-        await update.message.reply_text(core.msg("unexpected", lang))
-        return
-    finally:
-        typing.cancel()
-
-    history.extend(
-        [{"role": "user", "text": question}, {"role": "assistant", "text": answer}]
-    )
-    del history[: -core.HISTORY_TURNS]  # keep only the most recent turns
-    await reply(update.message, answer)
+    await answer_question(update, context)
 
 
 async def on_unsupported(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -480,6 +465,7 @@ def build_application() -> Application:
         .build()
     )
     from accounts_bot import register_accounts
+    from assistant_bot import register_assistant
     from documents_bot import register_documents
     from events_bot import register_events
     from rooms_bot import register_rooms
@@ -488,6 +474,7 @@ def build_application() -> Application:
     register_events(app)
     register_rooms(app)
     register_documents(app)
+    register_assistant(app)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("lang", cmd_lang))

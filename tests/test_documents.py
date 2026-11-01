@@ -15,11 +15,14 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from telegram import Chat, Message, Update, User
 from telegram.ext import ExtBot
 
+import assistant
+import doc_check
 import documents
 import documents_bot
 import deadline_bot
@@ -89,6 +92,77 @@ class ValidationTests(unittest.TestCase):
         self.assertIsNone(documents.check_file(unt, 'unt.pdf', 'application/pdf', limit, limit))
         self.assertEqual(documents.check_file(unt, 'unt.pdf', 'application/pdf', limit + 1, limit), 'too_large')
         self.assertEqual(documents.describe_format('essay.docx', None), 'DOCX')
+
+
+class DocCheckTests(unittest.TestCase):
+    """The AI check of WHAT a file is (doc_check.py), without a real model."""
+
+    def setUp(self):
+        self.catalog = documents.load_catalog()
+
+    def verdict(self, requested, document_type, readable=True, confidence='high'):
+        result = {'document_type': document_type, 'readable': readable, 'confidence': confidence}
+        return doc_check.decide(self.catalog.get(requested), result)
+
+    def test_decisions(self):
+        cases = [
+            ('unt_certificate', 'unt_certificate', True, 'high', 'ok'),
+            ('unt_certificate', 'unt_certificate', False, 'low', 'unclear'),   # unreadable: ask for a clearer one
+            ('unt_certificate', 'timetable', True, 'high', 'wrong'),
+            ('unt_certificate', 'passport', True, 'high', 'wrong'),
+            ('unt_certificate', 'student_id_card', True, 'medium', 'wrong'),
+            ('unt_certificate', 'school_certificate', True, 'low', 'unclear'),  # unsure: no hard refusal
+            ('unt_certificate', 'other_document', False, 'high', 'unclear'),
+            ('photo_3x4', 'not_a_document', False, 'high', 'wrong'),            # a holiday photo
+            ('photo_3x4', 'portrait_photo', True, 'high', 'ok'),
+            ('student_fee_receipt', 'payment_receipt', True, 'high', 'ok'),     # both receipts look alike
+            ('tuition_receipt', 'payment_receipt', True, 'medium', 'ok'),
+        ]
+        for requested, detected, readable, confidence, outcome in cases:
+            with self.subTest(requested=requested, detected=detected):
+                self.assertEqual(self.verdict(requested, detected, readable, confidence).outcome, outcome)
+
+    def test_the_model_can_only_name_a_type_and_is_not_told_the_expected_one(self):
+        schema = doc_check.schema(self.catalog)
+        self.assertEqual(set(schema['properties']), {'document_type', 'readable', 'confidence'})
+        self.assertEqual(schema['properties']['readable'], {'type': 'boolean'})
+        for name in ('document_type', 'confidence'):  # enums only: no field can carry text from the file
+            self.assertIn('enum', schema['properties'][name])
+        self.assertIn('PRIVACY RULE', doc_check.SYSTEM)
+        self.assertIn('IIN', doc_check.SYSTEM)
+
+        requests = []
+
+        def generate_content(model, contents, config):
+            requests.append((contents, config))
+            return SimpleNamespace(text='{"document_type": "timetable", "readable": true, "confidence": "high"}')
+
+        client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+        unt = self.catalog.get('unt_certificate')
+        with patch.object(doc_check, '_gemini', return_value=client), patch.object(doc_check, 'enabled', return_value=True), \
+             patch('builtins.print') as printed:
+            verdict = doc_check.check(b'%PDF-1.4 SPECIMEN NAME SURNAME 950101300123', 'application/pdf', unt, self.catalog)
+        self.assertEqual((verdict.outcome, verdict.detected), ('wrong', 'timetable'))
+        contents, config = requests[0]
+        parts = contents[0].parts
+        self.assertEqual(parts[0].inline_data.mime_type, 'application/pdf')
+        question = parts[1].text
+        self.assertEqual(question, doc_check.prompt(self.catalog))  # the same question for every request
+        self.assertNotIn('requested', question.lower())
+        self.assertEqual(config.response_mime_type, 'application/json')
+        logged = ' '.join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn('requested=unt_certificate detected=timetable', logged)
+        for secret in ('SPECIMEN', 'SURNAME', '950101300123'):
+            self.assertNotIn(secret, logged)
+
+    def test_unavailable_model_and_switched_off_check(self):
+        unt = self.catalog.get('unt_certificate')
+        with patch.object(doc_check, 'enabled', return_value=True), \
+             patch.object(doc_check, 'classify', side_effect=TimeoutError('busy')):
+            self.assertEqual(doc_check.check(b'x', 'image/jpeg', unt, self.catalog).outcome, 'unavailable')
+        with patch.dict(os.environ, {'DOCUMENT_CHECK': 'off'}):
+            self.assertFalse(doc_check.enabled())
+            self.assertEqual(doc_check.check(b'x', 'image/jpeg', unt, self.catalog).outcome, 'off')
 
 
 class StoreTests(unittest.TestCase):
@@ -218,7 +292,8 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
             patch.object(documents, 'DB_PATH', Path(self.temp.name) / 'documents.db'),
             patch.dict(documents._stores, clear=True),
             patch.dict(os.environ, {'DOCUMENTS_REVIEWER_IDS': '777'}),
-            patch.object(telegram_bot.core, 'answer_async', new=AsyncMock(return_value='AI answer')),
+            patch.object(doc_check, 'enabled', return_value=False),  # the format checks only; see DocCheckFlowTests
+            patch.object(assistant, 'run', new=AsyncMock(return_value=assistant.Answer(text='AI answer', lang='en'))),
         ):
             self.patches.append(p)
             started = p.start()
@@ -508,6 +583,71 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(names), len(set(names)))
         self.assertIn('/documents', telegram_bot.text('help', 'kk'))
         self.ai.assert_not_awaited()
+
+
+    # ------------------------------------------------------- the AI check ----
+
+    async def checked_upload(self, doc_id, result, name='upload.pdf', photo=False):
+        """Upload a file for `doc_id` while the AI check answers `result`
+        (a dict, or an exception for an unavailable model)."""
+        telegram_file = SimpleNamespace(download_as_bytearray=AsyncMock(return_value=bytearray(b'%PDF-1.4 test')))
+        classify = patch.object(doc_check, 'classify', side_effect=result if isinstance(result, Exception) else None,
+                                return_value=None if isinstance(result, Exception) else result)
+        with patch.object(doc_check, 'enabled', return_value=True), \
+             patch.object(ExtBot, 'get_file', new=AsyncMock(return_value=telegram_file)), classify as model:
+            await self.tap(f'docs:up:{doc_id}')
+            if photo:
+                await self.upload(photo=True)
+            else:
+                await self.upload(name=name)
+        return model
+
+    async def start_checklist(self):
+        self.link_portal()
+        await self.text('/documents')
+        await self.tap('docs:track:grant')
+
+    async def test_ai_check_refuses_another_document_and_saves_nothing(self):
+        await self.start_checklist()
+        for detected, kind in (('timetable', 'a class timetable'), ('passport', 'a passport'),
+                               ('student_id_card', 'a student ID card')):
+            with self.subTest(detected=detected):
+                model = await self.checked_upload('unt_certificate', {
+                    'document_type': detected, 'readable': True, 'confidence': 'high'})
+                model.assert_called_once()
+                self.assertEqual(self.edit.call_args.kwargs['text'],
+                                 f"❌ This file doesn't look like «UNT certificate» — it looks like {kind}. "
+                                 "It was not saved. Please send «UNT certificate».")
+                self.assertNotIn('unt_certificate', self.submission().documents)
+                self.assertEqual(self.app.user_data[42]['doc_pending']['type'], 'unt_certificate')
+
+    async def test_ai_check_asks_for_a_clearer_file(self):
+        await self.start_checklist()
+        await self.checked_upload('unt_certificate', {
+            'document_type': 'unt_certificate', 'readable': False, 'confidence': 'low'})
+        self.assertIn("I can't see this file clearly enough to confirm it is «UNT certificate»",
+                      self.edit.call_args.kwargs['text'])
+        self.assertNotIn('unt_certificate', self.submission().documents)
+
+    async def test_ai_check_accepts_the_right_document(self):
+        await self.start_checklist()
+        await self.checked_upload('unt_certificate', {
+            'document_type': 'unt_certificate', 'readable': True, 'confidence': 'high'}, name='unt.pdf')
+        self.assertEqual(self.edit.call_args.kwargs['text'], '🤖 Checked: the file looks like «UNT certificate».')
+        self.assertIn('«UNT certificate» uploaded: unt.pdf', self.last_text())
+        self.assertEqual(self.submission().documents['unt_certificate'].status, documents.UPLOADED)
+        await self.checked_upload('photo_3x4', {
+            'document_type': 'portrait_photo', 'readable': True, 'confidence': 'high'}, photo=True)
+        self.assertIn('photo_3x4', self.submission().documents)
+        self.ai.assert_not_awaited()
+
+    async def test_ai_check_unavailable_keeps_the_file_for_manual_review(self):
+        await self.start_checklist()
+        await self.checked_upload('unt_certificate', TimeoutError('the model is overloaded'), name='unt.pdf')
+        self.assertEqual(self.edit.call_args.kwargs['text'],
+                         '⚠️ The automatic check is not available right now, so the admissions office will '
+                         'check this file by hand.')
+        self.assertIn('unt_certificate', self.submission().documents)
 
     async def test_missing_checklist_file_is_explained(self):
         self.link_portal()

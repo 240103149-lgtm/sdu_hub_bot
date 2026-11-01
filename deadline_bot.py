@@ -313,7 +313,10 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     context.user_data["moodle"] = session
     _close_flow(user_id, context)
     await status.edit_text(t("linked_ok", lang))
-    await _send_deadlines(context.bot, chat_id, context, user_id, lang)
+    # Signed in for the AI assistant: it answers the student's own question next
+    # (accounts_bot -> assistant_bot.resume), so the list is not sent twice.
+    if context.user_data.get("login_flow") != "assistant_moodle":
+        await _send_deadlines(context.bot, chat_id, context, user_id, lang)
     return ConversationHandler.END
 
 

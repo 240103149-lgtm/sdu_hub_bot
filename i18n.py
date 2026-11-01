@@ -5,7 +5,7 @@ Every language file has the same sections and keys:
     core       errors shared by the bot and the website (core.py)
     bot        /start, /help and other main texts (telegram_bot.py)
     commands   the Telegram command menu        home   the /start buttons
-    accounts, grade, deadline, rooms, events, documents, login
+    accounts, grade, deadline, rooms, events, documents, login, assistant
                the texts of each feature module
     web        the website (static/index.html)
 

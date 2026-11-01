@@ -51,6 +51,7 @@ PREFIX = AI_PROVIDER.upper()
 API_KEY = os.getenv(f"{PREFIX}_API_KEY")
 MODEL = os.getenv(f"{PREFIX}_MODEL") or ("deepseek-flash" if AI_PROVIDER == "deepseek" else None)
 FALLBACK_MODEL = os.getenv(f"{PREFIX}_FALLBACK_MODEL")
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 
 # US1 (chatbot): "the chatbot must generate and show a response within 5
 # seconds"; QA: if the AI server is unreachable or the response takes longer
@@ -216,13 +217,7 @@ Rules:
   Students also use informal words: "медпункт" / "медициналық орталық" = Medical
   Center; "жатақхана" / "общага" / "общежитие" / "дорм" = Student House;
   "анықтама" / "справка" = reference; "СДУ" = SDU.
-- BOT COMMANDS: personal data is not in the knowledge base, but the SDU Hub
-  Telegram bot has commands for it. If the student asks about their own Moodle
-  deadlines, say to use /deadline; their grades - /grade; free classrooms -
-  /rooms; the course registration guide - /guide; submitting enrollment
-  documents - /documents; the list of campus events - /events (you can also
-  answer about events from the knowledge base). Do not use the fallback sentence
-  for these questions.
+{services}
 - FOLLOW-UP RULE: A short question often continues the conversation and refers
   to the subject of the previous messages (for example "оған қалай барсам
   болады?" / "how do I get there?" right after a question about the Medical
@@ -238,6 +233,13 @@ Rules:
   while a newer one gives it, use the newer document and give the fact.
 - Questions about grades, scores or points (for example "less than 70 points")
   are answered from the grading scale, FX/F rules and scholarship rules.
+- OFFICIAL SOURCES: when the answer uses the knowledge base, end it with one
+  line that starts with "{source_label}" and gives the official https:// link
+  from the "Source" / "Sources" line at the top of the document you used (for
+  example https://sdu.edu.kz/en/accomodation/). Never write a file name such as
+  sdu_academic_rules.md or campus_events.md: if the document gives no link,
+  leave the line out. Never invent a link, and never add this line to the
+  fallback sentence.
 - FALLBACK RULE: If the answer is not in the knowledge base, or the question is
   not about the university, reply with exactly this sentence and nothing else:
   "{not_found}"
@@ -247,6 +249,51 @@ Rules:
 KNOWLEDGE BASE:
 {knowledge}
 """
+
+# Without tools (the website), the model points to the bot's commands for
+# personal data. The Telegram assistant replaces this rule with its tools
+# (assistant.SERVICES_RULE), so there the student never has to type a command.
+COMMANDS_RULE = """- BOT COMMANDS: personal data is not in the knowledge base, but the SDU Hub
+  Telegram bot has commands for it. If the student asks about their own Moodle
+  deadlines, say to use /deadline; their grades - /grade; free classrooms -
+  /rooms; the course registration guide - /guide; submitting enrollment
+  documents - /documents; the list of campus events - /events (you can also
+  answer about events from the knowledge base). Do not use the fallback sentence
+  for these questions."""
+
+
+def system_prompt(text: str, lang: str, services: str = COMMANDS_RULE) -> tuple[str, str]:
+    """The system prompt for one question, and the language to answer in.
+
+    `services` is the rule about personal data: bot commands on the website,
+    tool use in the Telegram assistant.
+    """
+    # Today's date (Almaty time) so the model can tell passed events from upcoming ones.
+    today = datetime.now(ZoneInfo("Asia/Almaty")).strftime("%A, %d %B %Y")
+    reply_lang = detect_lang(text, lang)  # the language the question is written in
+    prompt = SYSTEM_PROMPT.format(
+        ui_language=LANGS[reply_lang],
+        knowledge=load_knowledge(),
+        today=today,
+        not_found=msg("not_found", reply_lang),
+        services=services,
+        source_label=msg("source_label", reply_lang),
+    )
+    return prompt, reply_lang
+
+
+def finish_reply(reply: str, reply_lang: str) -> str:
+    """The model's answer as the student sees it: an empty reply gets the
+    "no answer" text, and the fallback sentence always comes with contacts."""
+    reply = (reply or "").strip()
+    if not reply:
+        return msg("no_answer", reply_lang)
+    if is_not_found(reply):
+        # Keep the required US1 sentence, but never leave the student at a dead
+        # end: say whom to contact and how.
+        return f"{msg('not_found', reply_lang)}\n\n{msg('not_found_contacts', reply_lang)}"
+    return reply
+
 
 # ------------------------------------------------- knowledge base (RAG) ----
 
@@ -374,7 +421,7 @@ def _ask_deepseek(contents: Sequence[Any], system_prompt: str, model: str, timeo
             text = "".join(part.text or "" for part in content.parts or [])
         messages.append({"role": role, "content": text})
     response = httpx.post(
-        "https://api.deepseek.com/chat/completions",
+        DEEPSEEK_URL,
         headers={"Authorization": f"Bearer {API_KEY}"},
         json={"model": model, "messages": messages, "stream": False,
               "thinking": {"type": "disabled"}},
@@ -472,18 +519,10 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
             contents.append(types.Content(role=role, parts=[types.Part(text=turn_text)]))
     contents.append(types.Content(role="user", parts=[types.Part(text=text)]))
 
-    # Today's date (Almaty time) so the model can tell passed events from upcoming ones.
-    today = datetime.now(ZoneInfo("Asia/Almaty")).strftime("%A, %d %B %Y")
-    reply_lang = detect_lang(text, lang)  # the language the question is written in
-    system_prompt = SYSTEM_PROMPT.format(
-        ui_language=LANGS[reply_lang],
-        knowledge=load_knowledge(),
-        today=today,
-        not_found=msg("not_found", reply_lang),
-    )
+    prompt, reply_lang = system_prompt(text, lang)
 
     started = time.monotonic()
-    call = _AI_POOL.submit(ask_ai, contents, system_prompt, started + RESPONSE_BUDGET)
+    call = _AI_POOL.submit(ask_ai, contents, prompt, started + RESPONSE_BUDGET)
     try:
         response = call.result(timeout=RESPONSE_BUDGET)
     except concurrent.futures.TimeoutError:
@@ -497,18 +536,14 @@ def answer(message: str, history: Iterable[Any] | None = None, lang: str = DEFAU
             print(f"[core] unexpected error: {exc!r}")
         raise AssistantError(key) from exc
 
-    elapsed = time.monotonic() - started
-    flag = "  <-- slower than the US1 target" if elapsed > SLOW_RESPONSE else ""
-    print(f"[core] answered in {elapsed:.1f}s (target {SLOW_RESPONSE:g}s){flag}")
+    log_timing("answered", time.monotonic() - started)
+    return finish_reply(response.text or "", reply_lang)
 
-    reply = (response.text or "").strip()
-    if not reply:
-        return msg("no_answer", reply_lang)
-    if is_not_found(reply):
-        # Keep the required US1 sentence, but never leave the student at a dead
-        # end: say whom to contact and how.
-        return f"{msg('not_found', reply_lang)}\n\n{msg('not_found_contacts', reply_lang)}"
-    return reply
+
+def log_timing(what: str, elapsed: float) -> None:
+    """[core] answered in 2.3s (target 5s) - the US1 timing log."""
+    flag = "  <-- slower than the US1 target" if elapsed > SLOW_RESPONSE else ""
+    print(f"[core] {what} in {elapsed:.1f}s (target {SLOW_RESPONSE:g}s){flag}")
 
 
 def _plain(text: str) -> str:
@@ -516,8 +551,13 @@ def _plain(text: str) -> str:
 
 
 def is_not_found(reply: str) -> bool:
-    """True when the model answered with the fallback sentence (in any language)."""
-    plain = _plain(reply)
+    """True when the model answered with the fallback sentence (in any language),
+    also when it wrongly added a source line under it."""
+    lines = [line for line in reply.strip().splitlines() if line.strip()]
+    labels = tuple(_plain(msg("source_label", lang)) for lang in LANGS)
+    while len(lines) > 1 and _plain(lines[-1]).startswith(labels):
+        lines.pop()
+    plain = _plain("\n".join(lines))
     return any(plain == _plain(msg("not_found", lang)) for lang in LANGS)
 
 
