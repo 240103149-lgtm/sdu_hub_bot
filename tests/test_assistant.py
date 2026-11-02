@@ -20,6 +20,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from google.genai import errors
 
 sys.path.insert(0, str(Path(__file__).parent))
 from harness import BotHarness  # noqa: E402
@@ -158,6 +159,27 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
                 await self.ask(model, Toolbox(), 'Free rooms?')
         self.assertEqual(error.exception.key, 'connection')
 
+    async def test_an_overloaded_model_hands_over_to_the_next_at_once(self):
+        """Gemini overloaded: the next model is asked straight away, not the same one
+        again after a pause - within the 5 s budget the next one would never come."""
+        asked = []
+
+        class Chat:
+            def ask(self, model, timeout):
+                asked.append(model)
+                if model == 'primary':
+                    raise errors.ServerError(503, {'error': {'code': 503, 'message': 'overloaded', 'status': 'UNAVAILABLE'}})
+                if model == 'gemini-2.5-flash-lite':  # a fallback model that no longer exists
+                    raise errors.ClientError(404, {'error': {'code': 404, 'message': 'gone', 'status': 'NOT_FOUND'}})
+                return say('Answer from the last resort.')
+
+        with patch.object(core, 'AI_PROVIDER', 'gemini'), patch.object(core, 'MODEL', 'primary'), \
+             patch.object(core, 'FALLBACK_MODEL', 'gemini-2.5-flash-lite'), \
+             patch.object(assistant, 'new_chat', lambda *args: Chat()), patch('builtins.print'):
+            answer = await assistant.run('What is GPA?', [], 'en', Toolbox())
+        self.assertEqual(asked, ['primary', 'gemini-2.5-flash-lite', core.GEMINI_LAST_RESORT])
+        self.assertIn('Answer from the last resort.', answer.text)
+
     async def test_empty_and_too_long_questions(self):
         for question, key in (('  ', 'empty'), ('x' * 2001, 'too_long')):
             with self.assertRaises(core.AssistantError) as error:
@@ -169,6 +191,22 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProviderFormatTests(unittest.TestCase):
+    def test_website_chat_hands_over_to_the_next_model_at_once(self):
+        asked = []
+
+        def generate_content(model, contents, config):
+            asked.append(model)
+            if model == 'primary':
+                raise errors.ServerError(503, {'error': {'code': 503, 'message': 'overloaded', 'status': 'UNAVAILABLE'}})
+            return SimpleNamespace(text='ok')
+
+        client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+        with patch.object(core, 'AI_PROVIDER', 'gemini'), patch.object(core, 'MODEL', 'primary'), \
+             patch.object(core, 'FALLBACK_MODEL', None), patch.object(core, 'client', client), patch('builtins.print'):
+            reply = core.ask_ai(['What is GPA?'], 'system prompt')
+        # No GEMINI_FALLBACK_MODEL configured: the last resort still answers.
+        self.assertEqual((asked, reply.text), (['primary', core.GEMINI_LAST_RESORT], 'ok'))
+
     def test_deepseek_tool_calling_request_and_reply(self):
         sent = []
 

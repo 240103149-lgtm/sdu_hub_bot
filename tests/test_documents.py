@@ -178,10 +178,33 @@ class DocCheckTests(unittest.TestCase):
              patch.object(doc_check, '_gemini', return_value=client), \
              patch.object(doc_check, 'enabled', return_value=True), patch('builtins.print'):
             verdict = doc_check.check(b'synthetic picture', 'image/jpeg', photo, self.catalog)
-        self.assertEqual(asked, ['primary-model', 'gemini-2.5-flash-lite', doc_check.LAST_RESORT])
+        self.assertEqual(asked, ['primary-model', 'gemini-2.5-flash-lite', 'gemini-flash-latest'])
         self.assertEqual((verdict.outcome, verdict.detected), ('wrong', 'not_a_document'))
-        with patch.object(doc_check, 'MODEL', doc_check.LAST_RESORT):
-            self.assertEqual(doc_check._models(), [doc_check.LAST_RESORT])  # never twice
+        with patch.object(doc_check, 'MODEL', 'gemini-flash-lite-latest'):
+            self.assertEqual(doc_check._models(), ['gemini-flash-lite-latest', 'gemini-flash-latest'])  # never twice
+
+    def test_an_overloaded_model_hands_over_at_once(self):
+        """The live check failed after 30 s: the overloaded model was asked twice
+        (504, then a timeout) and the fallback never got its turn."""
+        asked, overloaded = [], errors.ServerError(504, {'error': {'code': 504, 'message': 'Deadline expired',
+                                                                  'status': 'DEADLINE_EXCEEDED'}})
+
+        def generate_content(model, contents, config):
+            asked.append(model)
+            if model == 'primary-model' or len(asked) <= 4:  # the whole first round is overloaded
+                raise overloaded
+            return SimpleNamespace(text='{"document_type": "identity_card", "readable": true, "confidence": "high"}')
+
+        client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+        unt = self.catalog.get('unt_certificate')
+        with patch.object(core, 'AI_PROVIDER', 'gemini'), patch.object(core, 'MODEL', 'primary-model'), \
+             patch.object(core, 'FALLBACK_MODEL', 'backup-model'), patch.object(doc_check, 'MODEL', ''), \
+             patch.object(doc_check, '_gemini', return_value=client), \
+             patch.object(doc_check, 'enabled', return_value=True), patch('builtins.print'):
+            verdict = doc_check.check(b'synthetic scan', 'application/pdf', unt, self.catalog)
+        self.assertEqual(asked, ['primary-model', 'backup-model', 'gemini-flash-latest', 'gemini-flash-lite-latest',
+                                 'primary-model', 'backup-model'])  # round 2: the primary is still overloaded
+        self.assertEqual((verdict.outcome, verdict.detected), ('wrong', 'identity_card'))
 
     def test_unavailable_model_and_switched_off_check(self):
         unt = self.catalog.get('unt_certificate')

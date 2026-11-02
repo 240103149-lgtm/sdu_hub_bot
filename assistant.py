@@ -336,11 +336,12 @@ def _retryable(exc: BaseException) -> bool:
 
 
 def _ask_blocking(chat, deadline: float) -> Reply:
-    """One model turn with core.py's retries and fallback model, until `deadline`."""
-    models = [core.MODEL] + ([core.FALLBACK_MODEL] if core.FALLBACK_MODEL else [])
+    """One model turn until `deadline`, with core.py's models and retries: an
+    overloaded or unreachable model hands over to the next one at once."""
+    models = core.models_to_try()
     last: BaseException | None = None
-    for model in models:
-        for attempt in range(core.MAX_ATTEMPTS):
+    for attempt in range(core.MAX_ATTEMPTS):
+        for model in list(models):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise core.AssistantError(core._error_key(last) if last else "connection")
@@ -349,12 +350,14 @@ def _ask_blocking(chat, deadline: float) -> Reply:
             except Exception as exc:  # noqa: BLE001 - classified just below
                 last = exc
                 print(f"[assistant] {core.AI_PROVIDER} error ({model}, attempt {attempt + 1}): {exc}")
-                if not _retryable(exc):
+                if core.model_gone(exc):
+                    models.remove(model)
+                elif not _retryable(exc):
                     raise
-                pause = core.RETRY_PAUSE * (attempt + 1)
-                if attempt + 1 >= core.MAX_ATTEMPTS or time.monotonic() + pause >= deadline:
-                    break
-                time.sleep(pause)
+        pause = core.RETRY_PAUSE * (attempt + 1)
+        if not models or attempt + 1 >= core.MAX_ATTEMPTS or time.monotonic() + pause >= deadline:
+            break
+        time.sleep(pause)
     if last is not None:
         raise last
     raise core.AssistantError("connection")
