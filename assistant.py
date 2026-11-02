@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
@@ -157,6 +158,8 @@ SERVICES_RULE = """- TOOLS: you can act, not only answer. The student's own data
   bot signs them in securely when needed), so never say you have no access to
   them. "What did I get in physics?", "Сколько я получил по истории
   Казахстана?", "Физикадан қанша алдым?" are get_my_grades with that course.
+- Call a tool only through function calling. Never write a call or its result
+  as text (no <result>, <tool_call> or similar tags).
 - A tool's result is shown to the student as a card (the full list, with
   buttons) right after your text. So NEVER list its items again - no list of
   grades, deadlines, rooms or events: answer only the exact question in 1-2
@@ -404,20 +407,75 @@ async def run(question: str, history: Sequence[Any] | None, lang: str, toolbox: 
 
     for _ in range(MAX_STEPS):
         reply = await _ask(chat)
+        written = [] if reply.calls else written_calls(reply.text)
+        if written:
+            # The model wrote its tool call as text instead of making it
+            # (<result name="get_my_grades">...</result>): run it, and let the
+            # card answer. That text is never shown to the student.
+            if await _run_calls(written, toolbox, reply_lang, answer) is not None:
+                answer.text = strip_written_calls(reply.text)
+            return answer
         if not reply.calls:
             # A plain answer goes through the US1 rules (fallback sentence plus
             # contacts); after tools, the cards carry the data and the text may be short.
             answer.text = reply.text.strip() if answer.tools else core.finish_reply(reply.text, reply_lang)
             return answer
-        results = []
-        for call in reply.calls[:MAX_CALLS]:
-            result = await toolbox.run(call.name, call.args, reply_lang)
-            answer.tools.append(call.name)
-            if result.summary:
-                answer.summaries.append(result.summary)
-            if result.auth:  # the bot asks the student to sign in, then asks this again
-                answer.auth = result.auth
-                return answer
-            results.append((call, {**result.data, "note": SHOWN_NOTE} if result.shown else result.data))
+        results = await _run_calls(reply.calls, toolbox, reply_lang, answer)
+        if results is None:
+            return answer
         chat.add_results(results)
     return answer  # still calling tools after MAX_STEPS: the cards are the answer
+
+
+async def _run_calls(calls: list[Call], toolbox: Toolbox, lang: str, answer: Answer):
+    """Runs the calls; their results for the model, or None when the student
+    has to sign in first (answer.auth says where)."""
+    results = []
+    for call in calls[:MAX_CALLS]:
+        result = await toolbox.run(call.name, call.args, lang)
+        answer.tools.append(call.name)
+        if result.summary:
+            answer.summaries.append(result.summary)
+        if result.auth:  # the bot asks the student to sign in, then asks this again
+            answer.auth = result.auth
+            return None
+        results.append((call, {**result.data, "note": SHOWN_NOTE} if result.shown else result.data))
+    return results
+
+
+# A tool call written as text, in the forms models fall back to:
+#   <result name="get_my_grades">All courses ...</result>
+#   <tool_call>{"name": "find_free_rooms", "arguments": {"start_time": "14:00"}}</tool_call>
+_WRITTEN = re.compile(
+    r"<\s*(result|tool_call|tool_use|tool|function_call|function|invoke)\b([^>]*)>(.*?)(?:</\s*\1\s*>|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+_NAME = re.compile(r"""\bname\s*=\s*["']?([A-Za-z_]+)""")
+
+
+def written_calls(text: str) -> list[Call]:
+    """The tool calls a model wrote as text; only names of real tools count."""
+    names = {tool.name for tool in TOOLS}
+    calls: list[Call] = []
+    for _, attributes, body in _WRITTEN.findall(text or ""):
+        name, args = (_NAME.search(attributes) or [None, None])[1], {}
+        try:
+            data = json.loads(body.strip())
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            name = name or data.get("name")
+            args = data.get("arguments") or data.get("args") or data.get("parameters") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except ValueError:
+                    args = {}
+        if name in names and all(call.name != name for call in calls):
+            calls.append(Call(id="", name=name, args=args if isinstance(args, dict) else {}))
+    return calls
+
+
+def strip_written_calls(text: str) -> str:
+    """The reply without the tool calls written into it."""
+    return _WRITTEN.sub("", text or "").strip()

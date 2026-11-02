@@ -180,6 +180,18 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(asked, ['primary', 'gemini-2.5-flash-lite', core.GEMINI_LAST_RESORT])
         self.assertIn('Answer from the last resort.', answer.text)
 
+    def test_tool_calls_written_as_text(self):
+        """Seen live: the model wrote <result name="get_my_grades">...</result> instead of calling it."""
+        found = lambda text: [(c.name, c.args) for c in assistant.written_calls(text)]  # noqa: E731
+        self.assertEqual(found('<result name="get_my_grades">All courses with final grades, semester and '
+                               'cumulative GPA</result>'), [('get_my_grades', {})])
+        self.assertEqual(found('<tool_call>{"name": "find_free_rooms", "arguments": {"start_time": "14:00"}}'
+                               '</tool_call>'), [('find_free_rooms', {'start_time': '14:00'})])
+        self.assertEqual(found("<function_call name='get_my_deadlines'/>"), [('get_my_deadlines', {})])
+        self.assertEqual(found('GPA < 2.0 means academic probation.'), [])
+        self.assertEqual(found('<result name="delete_everything">x</result>'), [])  # not one of our tools
+        self.assertEqual(assistant.strip_written_calls('Here: <tool_call>{"name": "get_my_grades"}</tool_call>'), 'Here:')
+
     async def test_empty_and_too_long_questions(self):
         for question, key in (('  ', 'empty'), ('x' * 2001, 'too_long')):
             with self.assertRaises(core.AssistantError) as error:
@@ -542,6 +554,23 @@ class AssistantBotTests(BotHarness):
         await self.text('My grade in organic chemistry?')
         self.assertIn('📊 <b>2025–2026, Semester 2</b>  (2/2)', self.all_sent())
         self.assertTrue(self.model.results[-1][0][1]['matching_courses'].startswith('none:'))
+
+    async def test_a_tool_call_written_as_text_still_runs(self):
+        written = say('<result name="get_my_grades">All courses with final grades, semester and cumulative GPA</result>')
+        self.script(written)
+        await self.text('Бағамды көргім келеді')  # not signed in: the sign-in comes first, as for a real call
+        self.assertIn('университет порталындағы (my.sdu.edu.kz) аккаунтыңыз керек', self.last_text())
+        self.assertEqual(self.last_buttons()[0][0][1], 'auth:portal')
+        self.assertEqual(self.app.user_data[42]['pending_ask']['text'], 'Бағамды көргім келеді')
+
+        self.app.user_data[42].pop('pending_ask')
+        self.sign_in_with(transcript())
+        self.script(written)
+        await self.text('Бағамды көргім келеді')
+        sent = self.all_sent()
+        self.assertIn('<b>CSS 217</b> | Software Architecture | 5 ECTS | <b>A-</b>', sent)  # the grades card
+        self.assertNotIn('<result', sent)  # the markup never reaches the student
+        self.assertEqual(len(self.model.chats), 2)  # one model turn each time: the card is the answer
 
     # ------------------------------------------------- US13 academic calendar ----
 
