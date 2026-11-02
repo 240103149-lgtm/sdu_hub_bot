@@ -344,5 +344,15 @@
     "docs_title": "📄 **Enrollment documents** · {track}",
     "btn_submit_docs": "📄 Submit documents",
     "secret_guard": "🔒 That looked like a password, so I deleted it and did not send it anywhere. The sign-in has ended: to try again, send /login (portal) or /deadline (Moodle)."
+  },
+  "calendar": {
+    "title": "System Calendar",
+    "where": "my.sdu.edu.kz → Information → System Calendar",
+    "open": "open now",
+    "upcoming": "not open yet",
+    "over": "over",
+    "closed": "closed",
+    "mine": "Your individual permissions",
+    "empty": "The portal has not published the calendar for this term yet."
   }
 }

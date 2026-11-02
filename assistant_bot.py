@@ -9,6 +9,8 @@ The tools reuse the existing feature code - nothing is rebuilt here:
 
     get_my_grades ........... grade_bot (portal transcript, semester buttons)
     get_my_deadlines ........ moodle + deadline_bot
+    get_academic_calendar ... academic_calendar (the portal's System Calendar),
+                              else the academic calendar in the knowledge base
     find_free_rooms ......... rooms + rooms_bot (a period or an interval, buttons)
     get_campus_events ....... events_bot (ℹ️ details buttons)
     get_registration_guide .. core.load_guide + the portal button
@@ -38,6 +40,7 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
+import academic_calendar
 import assistant
 import core
 import deadline_bot
@@ -128,6 +131,13 @@ class TelegramToolbox:
     def user_id(self) -> int:
         return self.update.effective_user.id
 
+    def notes(self) -> str:
+        if self.private and self.context.user_data.get("portal"):
+            return ("\n\nTHIS STUDENT IS SIGNED IN TO THE PORTAL. For any question about university dates "
+                    "(registration, add/drop, withdrawal, exams, FX, resits), call get_academic_calendar "
+                    "before you answer: it shows their official System Calendar and their own windows.")
+        return ""
+
     async def run(self, name: str, args: dict[str, Any], lang: str) -> assistant.ToolResult:
         tool = getattr(self, f"tool_{name}", None) if name in {t.name for t in assistant.TOOLS} else None
         if tool is None:
@@ -196,6 +206,30 @@ class TelegramToolbox:
         summary = (f"[shown: grades, {len(semesters)} semesters; latest {latest.title}: {courses}; "
                    f"SPA {latest.spa or '-'}, GPA {latest.gpa or '-'}]")
         return assistant.ToolResult(data, summary=summary)
+
+    async def tool_get_academic_calendar(self, args: dict, lang: str) -> assistant.ToolResult:
+        # A question about dates never asks for a password: without the portal,
+        # the model answers from the academic calendar in the knowledge base.
+        portal = self.context.user_data.get("portal") if self.private else None
+        if portal:
+            try:
+                calendar = await academic_calendar.fetch_calendar(portal.get("cookies") or {})
+            except PortalError as exc:
+                print(f"[assistant] the portal's System Calendar is unavailable: {exc.key}")
+                if exc.key == "session_expired":
+                    self.context.user_data.pop("portal", None)
+                    grade_bot._CACHE.pop(self.user_id, None)
+            else:
+                now = datetime.now(deadline_bot._tz()).replace(tzinfo=None)
+                self.cards.append(Card(academic_calendar.render(calendar, lang, now), html=True))
+                data = {"today": f"{now:%Y-%m-%d %H:%M}", "source": "my.sdu.edu.kz -> Information -> System Calendar",
+                        **academic_calendar.as_data(calendar, now), "meaning": academic_calendar.MEANING}
+                windows = "; ".join(f"{e['title']} {e['from']} - {e['until']} ({e['now']})" for e in data["events"])
+                return assistant.ToolResult(data, summary=f"[shown: System Calendar, {calendar.term}: {windows}]")
+        return assistant.ToolResult({"source": "knowledge base", "note": (
+            "The portal's System Calendar is not available here (not signed in, or the portal did not "
+            "answer): answer from the academic calendar in the knowledge base with the exact dates. "
+            "Do not ask the student to sign in for this.")})
 
     async def tool_get_my_deadlines(self, args: dict, lang: str) -> assistant.ToolResult:
         if not self.private:

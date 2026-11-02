@@ -24,6 +24,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).parent))
 from harness import BotHarness  # noqa: E402
 
+import academic_calendar  # noqa: E402
 import assistant  # noqa: E402
 import core  # noqa: E402
 import grade  # noqa: E402
@@ -503,6 +504,54 @@ class AssistantBotTests(BotHarness):
         await self.text('My grade in organic chemistry?')
         self.assertIn('📊 <b>2025–2026, Semester 2</b>  (2/2)', self.all_sent())
         self.assertTrue(self.model.results[-1][0][1]['matching_courses'].startswith('none:'))
+
+    # ------------------------------------------------- US13 academic calendar ----
+
+    def window_around_now(self, title='Late withdrawal'):
+        now = datetime.now(rooms.CAMPUS_TZ).replace(tzinfo=None, second=0, microsecond=0)
+        start, end = now - timedelta(days=10), now + timedelta(days=10)
+        return academic_calendar.Event(title, start, end, 'OPENED'), f'{start:%d.%m.%Y %H:%M} – {end:%d.%m.%Y %H:%M}'
+
+    async def test_calendar_question_shows_the_portals_system_calendar(self):
+        self.app.user_data[42]['portal'] = {'student_id': '240103149', 'cookies': {}}
+        event, span = self.window_around_now()
+        calendar = academic_calendar.Calendar('2026 - 2027 Fall', [event])
+        self.script(call('get_academic_calendar'), say('Late withdrawal is open for 10 more days.'))
+        with patch.object(academic_calendar, 'fetch_calendar', new=AsyncMock(return_value=calendar)):
+            await self.text('When does withdrawal end?')
+        self.assertIn('THIS STUDENT IS SIGNED IN TO THE PORTAL', self.model.chats[-1]['system'])
+        self.assertIn('Late withdrawal is open for 10 more days.', self.all_sent())
+        self.assertIn(f'🟢 <b>Late withdrawal</b>: {span} · open now', self.message_with('🗓'))
+        seen = self.model.results[-1][0][1]
+        self.assertEqual((seen['term'], seen['events'][0]['now']), ('2026 - 2027 Fall', 'open'))
+        self.assertIn('a date alone means to the end of that day', seen['meaning'])
+        self.assertIn('[shown: System Calendar, 2026 - 2027 Fall: Late withdrawal', self.app.user_data[42]['history'][-1]['text'])
+
+    async def test_calendar_question_never_asks_for_a_sign_in(self):
+        fetch = AsyncMock()
+        self.script(call('get_academic_calendar'), say('Late withdrawal ends on 11.12.2026.'))
+        with patch.object(academic_calendar, 'fetch_calendar', new=fetch):
+            await self.text('Уиздроул қашан бітеді')  # the question from the live bot, which asked for Moodle
+        fetch.assert_not_awaited()
+        self.assertNotIn('SIGNED IN TO THE PORTAL', self.model.chats[-1]['system'])
+        self.assertEqual(self.last_text(), 'Late withdrawal ends on 11.12.2026.')
+        self.assertEqual(self.model.results[-1][0][1]['source'], 'knowledge base')
+        self.assertNotIn('pending_ask', self.app.user_data[42])
+
+        self.app.user_data[42]['portal'] = {'student_id': '240103149', 'cookies': {}}
+        self.script(call('get_academic_calendar'), say('Late withdrawal ends on 11.12.2026.'))
+        expired = AsyncMock(side_effect=grade.PortalError('session_expired'))
+        with patch.object(academic_calendar, 'fetch_calendar', new=expired):
+            await self.text('When does withdrawal end?')
+        self.assertEqual(self.model.results[-1][0][1]['source'], 'knowledge base')  # not a sign-in either
+        self.assertNotIn('portal', self.app.user_data[42])  # the dead session is forgotten
+        self.assertNotIn('pending_ask', self.app.user_data[42])
+
+    def test_calendar_dates_are_not_moodle_deadlines(self):
+        tools = {tool.name: tool.description for tool in assistant.TOOLS}
+        self.assertIn('Never ask for a sign-in', tools['get_academic_calendar'])
+        self.assertIn('NOT university dates', tools['get_my_deadlines'])
+        self.assertIn('Never use get_my_deadlines for them', assistant.SERVICES_RULE)
 
 
 if __name__ == '__main__':
