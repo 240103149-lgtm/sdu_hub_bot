@@ -71,11 +71,13 @@ OTHER_KINDS = ("passport", "identity_card", "student_id_card", "timetable", "oth
 
 MODEL = os.getenv("DOCUMENT_CHECK_MODEL", "").strip()
 # Tried after the configured models, so that a fallback model that no longer
-# exists or a model over its per-minute quota does not switch the check off.
-LAST_RESORT = "gemini-flash-lite-latest"
+# exists, a model over its per-minute quota or an overloaded model family does
+# not switch the check off. gemini-flash-latest runs on other capacity than the
+# lite models.
+LAST_RESORT = ("gemini-flash-latest", "gemini-flash-lite-latest")
 BUDGET = float(os.getenv("DOCUMENT_CHECK_SECONDS", "30"))  # all attempts together
-ATTEMPT_SECONDS = 15  # one request
-ATTEMPTS = 2          # per model
+ATTEMPT_SECONDS = 10  # one request: an overloaded model is left for the next one
+ROUNDS = 2            # times through the list of models
 
 SYSTEM = (
     "You sort files that students upload to a university admissions checklist by DOCUMENT TYPE. "
@@ -160,7 +162,7 @@ def _models() -> list[str]:
         models = [core.MODEL, core.FALLBACK_MODEL]
     else:
         models = [os.getenv("GEMINI_MODEL", "").strip()]
-    return list(dict.fromkeys(m.strip() for m in models + [LAST_RESORT] if m and m.strip()))
+    return list(dict.fromkeys(m.strip() for m in [*models, *LAST_RESORT] if m and m.strip()))
 
 
 def enabled() -> bool:
@@ -173,8 +175,9 @@ def enabled() -> bool:
 def classify(data: bytes, mime_type: str, catalog: documents.Catalog) -> dict:
     """The model's answer about one file: {document_type, readable, confidence}.
 
-    Retries temporary failures (overload, timeouts) within BUDGET seconds.
-    Raises the last error when no attempt worked.
+    Each model is asked once per round, within BUDGET seconds in all: when one
+    is overloaded or slow (a 504, a timeout), the next one is asked at once
+    instead of the same one again. Raises the last error when none answered.
     """
     from google.genai import types
 
@@ -183,9 +186,9 @@ def classify(data: bytes, mime_type: str, catalog: documents.Catalog) -> dict:
         types.Part(text=prompt(catalog)),
     ])]
     deadline = time.monotonic() + BUDGET
-    last: BaseException | None = None
-    for model in _models():
-        for attempt in range(ATTEMPTS):
+    models, last = _models(), None
+    for round_ in range(ROUNDS):
+        for model in list(models):
             remaining = deadline - time.monotonic()
             if remaining < 2:
                 raise last or TimeoutError("no time left for the document check")
@@ -206,11 +209,9 @@ def classify(data: bytes, mime_type: str, catalog: documents.Catalog) -> dict:
             except Exception as exc:  # noqa: BLE001 - only the error type is logged, never content
                 last = exc
                 code = exc.code if isinstance(exc, errors.APIError) else ""
-                print(f"[documents] AI check attempt {attempt + 1} ({model}) failed: {type(exc).__name__} {code}".rstrip())
+                print(f"[documents] AI check round {round_ + 1} ({model}) failed: {type(exc).__name__} {code}".rstrip())
                 if isinstance(exc, errors.APIError) and (exc.code not in core.RETRYABLE or exc.code == 429):
-                    break  # this model will not work now (gone, or over its quota): try the next one
-                if attempt + 1 < ATTEMPTS:
-                    time.sleep(1)
+                    models.remove(model)  # gone, refused or over its quota: not asked again
     raise last or TimeoutError("no model is configured for the document check")
 
 

@@ -67,9 +67,12 @@ REQUEST_TIMEOUT = float(os.getenv(f"{PREFIX}_TIMEOUT_SECONDS", str(RESPONSE_BUDG
 
 MAX_QUESTION_LENGTH = 2000
 HISTORY_TURNS = 10          # how many past messages are sent back to the model
-MAX_ATTEMPTS = 3            # attempts per model before giving up
+MAX_ATTEMPTS = 3            # times through the list of models before giving up
 RETRY_PAUSE = 1.5           # seconds; grows with each attempt
 RETRYABLE = {429, 500, 502, 503, 504}
+# Tried after GEMINI_MODEL and GEMINI_FALLBACK_MODEL, so that a fallback that
+# no longer exists (or none at all) does not leave the bot without a model.
+GEMINI_LAST_RESORT = "gemini-flash-lite-latest"
 
 if not API_KEY or not MODEL:
     raise RuntimeError(
@@ -431,17 +434,33 @@ def _ask_deepseek(contents: Sequence[Any], system_prompt: str, model: str, timeo
     return SimpleNamespace(text=response.json()["choices"][0]["message"]["content"])
 
 
+def models_to_try() -> list[str]:
+    """The models to ask, in order, each once: MODEL, FALLBACK_MODEL and, for
+    Gemini, the last resort."""
+    models = [MODEL, FALLBACK_MODEL] + ([GEMINI_LAST_RESORT] if AI_PROVIDER == "gemini" else [])
+    return list(dict.fromkeys(m.strip() for m in models if m and m.strip()))
+
+
+def model_gone(exc: BaseException) -> bool:
+    """404: this model name does not exist (any more) - the next one may."""
+    if isinstance(exc, errors.APIError):
+        return exc.code == 404
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404
+
+
 def ask_ai(contents: Sequence[Any], system_prompt: str, deadline: float | None = None):
-    """Ask the main model; retry temporary errors, then try the fallback model.
+    """Ask the models in turn (models_to_try): an overloaded or unreachable one
+    hands over to the next at once, and the list is gone through again, with a
+    pause, up to MAX_ATTEMPTS times.
 
     `deadline` is a time.monotonic() value: once it passes we stop retrying so
     the student is never left waiting past the response budget.
     """
-    models = [MODEL] + ([FALLBACK_MODEL] if FALLBACK_MODEL else [])
+    models = models_to_try()
     last_exc: BaseException | None = None
 
-    for model in models:
-        for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(MAX_ATTEMPTS):
+        for model in list(models):
             if deadline is not None and time.monotonic() >= deadline:
                 raise AssistantError(_error_key(last_exc) if last_exc else "connection")
             try:
@@ -464,14 +483,16 @@ def ask_ai(contents: Sequence[Any], system_prompt: str, deadline: float | None =
                     isinstance(exc, errors.APIError) and exc.code in RETRYABLE
                 ) or (isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in RETRYABLE) or _is_transport_error(exc)
                 print(f"[core] {AI_PROVIDER} error ({model}, attempt {attempt + 1}): {exc}")
-                if not retryable:
+                if model_gone(exc):
+                    models.remove(model)
+                elif not retryable:
                     raise
-                pause = RETRY_PAUSE * (attempt + 1)
-                if attempt + 1 >= MAX_ATTEMPTS:
-                    break
-                if deadline is not None and time.monotonic() + pause >= deadline:
-                    break
-                time.sleep(pause)
+        pause = RETRY_PAUSE * (attempt + 1)
+        if not models or attempt + 1 >= MAX_ATTEMPTS:
+            break
+        if deadline is not None and time.monotonic() + pause >= deadline:
+            break
+        time.sleep(pause)
 
     if last_exc is not None:
         raise last_exc
