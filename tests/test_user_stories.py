@@ -7,6 +7,7 @@ os.environ.setdefault('GEMINI_API_KEY', 'offline-test-key')
 os.environ.setdefault('GEMINI_MODEL', 'offline-test-model')
 os.environ.setdefault('TELEGRAM_BOT_TOKEN', '123456:offline-test-token')
 
+import re
 import sys
 import time
 import unittest
@@ -20,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from harness import BotHarness  # noqa: E402
 
 import core  # noqa: E402
+import login_guard  # noqa: E402
 import rooms  # noqa: E402
 import telegram_bot  # noqa: E402
 
@@ -465,6 +467,14 @@ class FakePortal:
         pass
 
 
+def retry_text(left, who='student number'):
+    """US7 "Invalid credentials" with the attempts left; the password is typed again in place."""
+    fix = 'the student number' if who == 'student number' else 'the username'
+    return (f'❌ Invalid credentials: wrong {who} or password. Attempts left: {left}.\n'
+            f'Type the password here again (the message will be deleted). If {fix} was wrong, tap the button.\n'
+            'To cancel: /cancel')
+
+
 class US7AuthenticationTests(BotHarness):
     """US7 Student system authentication."""
 
@@ -487,14 +497,18 @@ class US7AuthenticationTests(BotHarness):
 
     async def test_five_wrong_passwords_lock_the_account(self):
         FakePortal.password_ok = False
-        for left in (4, 3, 2, 1):
-            await self.sign_in()
-            self.assertEqual(self.edited_texts()[-1],
-                             f'Invalid credentials: wrong student number or password. Try again with /grade. Attempts left: {left}.')
         await self.sign_in()
+        for left in (4, 3, 2, 1):
+            if left < 4:
+                await self.text('secret')  # typed again right away: no command needed
+            self.assertEqual(self.edited_texts()[-1], retry_text(left))
+            buttons = self.edit.call_args.kwargs['reply_markup'].inline_keyboard
+            self.assertEqual(buttons[0][0].callback_data, 'grade:newid')
+        await self.text('secret')
         locked = 'Account temporarily locked: 5 failed sign-in attempts in a row. Try again in 15 min.'
         self.assertEqual(self.edited_texts()[-1], locked)
         self.assertEqual(FakePortal.created, 5)
+        self.assertEqual(self.delete.await_count, 5)  # every password message was deleted
 
         FakePortal.password_ok = True  # even the right password must wait now
         await self.text('/grade')
@@ -517,13 +531,13 @@ class US7AuthenticationTests(BotHarness):
         await self.sign_in(student_id='111')
         await self.sign_in(student_id='111')
         await self.sign_in(student_id='222')
-        self.assertTrue(self.edited_texts()[-1].endswith('Attempts left: 4.'))
+        self.assertIn('Attempts left: 4.', self.edited_texts()[-1])
         FakePortal.password_ok = True
         await self.sign_in(student_id='111')
         self.app.user_data[42].pop('portal')
         FakePortal.password_ok = False
         await self.sign_in(student_id='111')
-        self.assertTrue(self.edited_texts()[-1].endswith('Attempts left: 4.'))
+        self.assertIn('Attempts left: 4.', self.edited_texts()[-1])
 
     async def test_login_command_opens_the_main_menu(self):
         await self.text('/login')
@@ -556,7 +570,7 @@ class US7AuthenticationTests(BotHarness):
         self.assertNotIn('login_flow', self.app.user_data[42])
         FakePortal.password_ok = False
         await self.sign_in(command='/login')
-        self.assertIn('Try again with /login.', self.edited_texts()[-1])
+        self.assertEqual(self.edited_texts()[-1], retry_text(4))
         await self.text('/login', user_id=-100, chat_type='group')
         self.assertIn('private chat', self.last_text())
         names = [name for name, _ in telegram_bot.COMMAND_LABELS['en']]
@@ -574,13 +588,98 @@ class US7AuthenticationTests(BotHarness):
                 await self.text('wrong')
         self.assertEqual(self.edited_texts()[-1],
                          'Account temporarily locked: 5 failed sign-in attempts in a row. Try again in 15 min.')
-        failures = [text for text in self.edited_texts() if text.startswith('Invalid credentials')]
-        self.assertEqual([text.rsplit(' ', 1)[1] for text in failures], ['4.', '3.', '2.', '1.'])
+        failures = [text for text in self.edited_texts() if 'Invalid credentials' in text]
+        self.assertEqual([re.search(r'Attempts left: (\d+)\.', text).group(1) for text in failures],
+                         ['4', '3', '2', '1'])
         await self.text('/deadline')
         await self.tap('deadline:register')
         await self.text('MOODLE-USER')  # the same account, whatever the letter case
         self.assertTrue(self.last_text().startswith('Account temporarily locked'))
         self.assertEqual(failing.await_count, 5)
+
+    async def test_wrong_password_is_typed_again_without_a_command(self):
+        """The bug from the live bot: after a wrong password the next message went to
+        the AI chat. Now it is the next attempt - in every portal sign-in."""
+        await self.text('/documents')
+        await self.tap('docs:signin')
+        await self.text('240103149')
+        FakePortal.password_ok = False
+        await self.text('wrong-pass1')
+        self.assertEqual(self.edited_texts()[-1], retry_text(4))
+        FakePortal.password_ok = True
+        await self.text('right-pass2')  # no /documents needed
+        self.assertEqual(self.app.user_data[42]['portal']['student_id'], '240103149')
+        self.assertIn('How are you enrolling?', self.last_text())  # /documents continues by itself
+        self.assertEqual(self.delete.await_count, 2)
+        self.ai.assert_not_awaited()  # neither password reached the AI
+        self.assertNotIn('wrong-pass1', repr(dict(self.app.user_data[42])))
+
+    async def test_change_student_number_after_a_wrong_password(self):
+        FakePortal.password_ok = False
+        await self.sign_in(student_id='111')
+        await self.tap('grade:newid')
+        self.assertIn('student number', self.last_edit())
+        FakePortal.password_ok = True
+        await self.text('222')
+        await self.text('right-pass')
+        self.assertEqual(self.app.user_data[42]['portal']['student_id'], '222')
+        self.ai.assert_not_awaited()
+        await self.tap('grade:newid')  # an old button after the sign-in: harmless
+        self.assertEqual(self.answer.call_args.kwargs.get('show_alert'), True)
+
+    async def test_moodle_password_is_typed_again_too(self):
+        import moodle
+        attempts = AsyncMock(side_effect=[moodle.MoodleError('bad_credentials'), {'mode': 'token', 'token': 't'}])
+        with patch.object(moodle, 'login', new=attempts), \
+             patch.object(moodle, 'fetch_deadlines', new=AsyncMock(return_value=[])):
+            await self.text('/deadline')
+            await self.tap('deadline:register')
+            await self.text('moodle-user')
+            await self.text('wrong-pass')
+            self.assertEqual(self.edited_texts()[-1], retry_text(4, who='username'))
+            await self.text('right-pass')
+        self.assertEqual(self.app.user_data[42]['moodle']['token'], 't')
+        self.assertEqual(attempts.await_count, 2)
+        self.ai.assert_not_awaited()
+
+    async def test_password_typed_after_the_lock_never_reaches_the_ai(self):
+        FakePortal.password_ok = False
+        await self.sign_in()
+        for _ in range(4):
+            await self.text('secret')
+        self.assertTrue(self.edited_texts()[-1].startswith('Account temporarily locked'))
+        deleted = self.delete.await_count
+        await self.text('MyPass123!')  # the student tries once more, in the plain chat
+        self.ai.assert_not_awaited()
+        self.assertEqual(self.delete.await_count, deleted + 1)
+        self.assertTrue(self.last_text().startswith('🔒 That looked like a password'))
+        await self.text('How do I reset my portal password?')  # a real question still works
+        self.ai.assert_awaited_once()
+
+    async def test_password_typed_after_the_sign_in_expired_is_deleted(self):
+        FakePortal.password_ok = False
+        await self.sign_in()
+        self.app.user_data[42]['login_started'] -= 601  # the student came back 10 minutes later
+        deleted = self.delete.await_count
+        await self.text('MyPass123!')
+        self.assertEqual(self.delete.await_count, deleted + 1)
+        self.assertEqual(self.last_text(), 'The sign-in session expired (over 10 minutes). Start again with /grade.')
+        self.assertEqual(FakePortal.created, 1)  # not sent to the portal...
+        await self.text('MyPass123!')  # ...and typed once more: not to the AI either
+        self.ai.assert_not_awaited()
+        self.assertTrue(self.last_text().startswith('🔒 That looked like a password'))
+
+    def test_what_looks_like_a_password(self):
+        for text in ('MyPass123!', 'qwerty12', 'abc$defg', 'Zhannur!', 'Qwerty12?'):
+            self.assertTrue(login_guard.looks_like_password(text), text)
+        for text in ('GPA?', 'Почему?', 'Рахмет', 'How do I reset my password?', '👍👍👍👍', 'abc', ''):
+            self.assertFalse(login_guard.looks_like_password(text), text)
+        user_data = {}
+        self.assertFalse(login_guard.maybe_secret(user_data, 'MyPass123!'))  # no sign-in ended badly
+        login_guard.note_failed_signin(user_data)
+        self.assertTrue(login_guard.maybe_secret(user_data, 'MyPass123!'))
+        user_data['signin_failed_at'] -= login_guard.SECRET_WINDOW + 1
+        self.assertFalse(login_guard.maybe_secret(user_data, 'MyPass123!'))  # too long ago
 
 
 if __name__ == '__main__':

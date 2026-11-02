@@ -23,6 +23,7 @@ import documents_bot as docs
 import grade_bot as grade
 import i18n
 import login_bot as login
+import login_guard
 import telegram_bot as bot
 
 FLOW_TTL = 600
@@ -63,6 +64,10 @@ def step(callback):
             await clear_login(update, context)
             if update.callback_query:
                 await update.callback_query.answer()
+            elif update.message and login_guard.looks_like_password(update.message.text):
+                # Probably the password, typed after the sign-in expired: delete it too.
+                await grade._forget(update.message)
+                login_guard.note_failed_signin(context.user_data)
             module = texts_for(feature)
             await update.effective_message.reply_text(module.t("session_lost", bot.user_lang(update, context)))
             return ConversationHandler.END
@@ -171,11 +176,17 @@ def register_accounts(app):
                 CallbackQueryHandler(step(login.on_choice), pattern=r"^login:(signin|cancel)$"),
             ],
             grade.ASK_ID: [MessageHandler(only_text, step(grade.on_student_id))],
-            grade.ASK_PASSWORD: [MessageHandler(only_text, step(grade.on_password))],
+            grade.ASK_PASSWORD: [
+                MessageHandler(only_text, step(grade.on_password)),
+                CallbackQueryHandler(step(grade.on_change_id), pattern=r"^grade:newid$"),
+            ],
             grade.ASK_CODE: [MessageHandler(only_text, step(grade.on_code))],
             deadline.CHOOSE: [CallbackQueryHandler(step(deadline.on_choice), pattern=r"^deadline:(register|cancel)$")],
             deadline.ASK_USER: [MessageHandler(only_text, step(deadline.on_username))],
-            deadline.ASK_PASS: [MessageHandler(only_text, step(deadline.on_password))],
+            deadline.ASK_PASS: [
+                MessageHandler(only_text, step(deadline.on_password)),
+                CallbackQueryHandler(step(deadline.on_change_user), pattern=r"^deadline:newuser$"),
+            ],
         },
         fallbacks=[
             CommandHandler("cancel", cancel),

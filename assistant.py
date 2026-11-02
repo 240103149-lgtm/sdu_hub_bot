@@ -62,11 +62,18 @@ def _clock(what: str) -> dict[str, str]:
 TOOLS: tuple[Tool, ...] = (
     Tool(
         "get_my_grades",
-        "The student's own grades from the university portal (my.sdu.edu.kz): every semester "
-        "with its courses, letter grades and ECTS credits, the semester GPA (SPA) and the "
-        "cumulative GPA. Use it for any question about their own grades, GPA, transcript or "
-        "the result of one of their courses.",
-        _args(),
+        "The student's own grades from the university portal (my.sdu.edu.kz) transcript: every "
+        "semester with its courses, final letter grades and ECTS credits, the semester GPA (SPA) "
+        "and the cumulative GPA. Use it for any question about their own grades, GPA, transcript "
+        "or the result of one course (\"what did I get in physics\"); for one course ALWAYS pass "
+        "`course`, and the card then shows only that course.",
+        _args(course={
+            "type": "string",
+            "description": "Only this course: its code (MAT 156) or its official English name as on a "
+            "transcript (Discrete Mathematics). Turn nicknames and other languages into that name, "
+            "e.g. 'дискретка' -> 'Discrete Mathematics', 'матан' -> 'Calculus', 'физика' -> 'Physics', "
+            "'история Казахстана' -> 'History of Kazakhstan'. Leave it out for all grades.",
+        }),
     ),
     Tool(
         "get_my_deadlines",
@@ -125,6 +132,10 @@ SERVICES_RULE = """- TOOLS: you can act, not only answer. The student's own data
   get_registration_guide, get_required_documents (enrollment documents and the
   student's own submission), sign_in (when they ask to log in). Do not use the
   fallback sentence for these questions.
+- Through these tools you CAN see the student's own grades and deadlines (the
+  bot signs them in securely when needed), so never say you have no access to
+  them. "What did I get in physics?", "Сколько я получил по истории
+  Казахстана?", "Физикадан қанша алдым?" are get_my_grades with that course.
 - A tool's result is shown to the student as a card (the full list, with
   buttons) right after your text. So NEVER list its items again - no list of
   grades, deadlines, rooms or events: answer only the exact question in 1-2

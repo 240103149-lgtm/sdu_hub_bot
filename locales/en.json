@@ -84,7 +84,12 @@
     "unlinked": "The portal is unlinked and the saved data has been deleted.",
     "not_linked": "No portal is linked. Start with /grade",
     "menu": "Grades (portal)",
-    "help_line": "/grade — grades (university portal)"
+    "help_line": "/grade — grades (university portal)",
+    "wrong_credentials": "❌ Invalid credentials: wrong student number or password.",
+    "retry_password": "Type the password here again (the message will be deleted). If the student number was wrong, tap the button.\nTo cancel: /cancel",
+    "btn_change_id": "🔢 Change student number",
+    "score": "Score",
+    "btn_all_grades": "📊 All grades"
   },
   "deadline": {
     "need_link": "To see your deadlines, you need to link your Moodle account (moodle.sdu.edu.kz) to the bot. Do it now?",
@@ -137,7 +142,10 @@
       "Oct",
       "Nov",
       "Dec"
-    ]
+    ],
+    "wrong_credentials": "❌ Invalid credentials: wrong username or password.",
+    "retry_password": "Type the password here again (the message will be deleted). If the username was wrong, tap the button.\nTo cancel: /cancel",
+    "btn_change_user": "👤 Change username"
   },
   "rooms": {
     "title": "Free rooms: {count}",
@@ -331,6 +339,7 @@
     "continuing": "✅ Now, your question: «{question}»",
     "private_data": "🔒 Personal data (grades, deadlines, documents) is shown only in a private chat with the bot.",
     "docs_title": "📄 **Enrollment documents** · {track}",
-    "btn_submit_docs": "📄 Submit documents"
+    "btn_submit_docs": "📄 Submit documents",
+    "secret_guard": "🔒 That looked like a password, so I deleted it and did not send it anywhere. The sign-in has ended: to try again, send /login (portal) or /deadline (Moodle)."
   }
 }

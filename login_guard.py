@@ -70,6 +70,33 @@ def attempts_text(lang: str, left: int) -> str:
     return text.format(left=left)
 
 
+SECRET_WINDOW = 180  # seconds after a sign-in ended badly in which a password may be retyped
+
+
+def note_failed_signin(user_data: dict) -> None:
+    """A sign-in just ended without success (locked, portal down...). A password
+    the student types again now must not reach the AI chat."""
+    user_data["signin_failed_at"] = time.time()
+
+
+def note_signed_in(user_data: dict) -> None:
+    user_data.pop("signin_failed_at", None)
+
+
+def looks_like_password(text: str | None) -> bool:
+    """One word with a digit or a symbol: "Qwerty123!" - not "GPA?" or "Почему?"."""
+    word = (text or "").strip().rstrip("?")
+    return (4 <= len(word) <= 64 and not any(ch.isspace() for ch in word)
+            and any(ch.isalnum() for ch in word) and any(not ch.isalpha() for ch in word))
+
+
+def maybe_secret(user_data: dict, text: str) -> bool:
+    """True for a message that is probably a password typed again right after a
+    sign-in ended (within SECRET_WINDOW)."""
+    failed = user_data.get("signin_failed_at")
+    return bool(failed) and time.time() - failed <= SECRET_WINDOW and looks_like_password(text)
+
+
 def log_timing(system: str, step: str, seconds: float) -> None:
     """[auth] portal sign-in: 1.4s (target 3s)"""
     flag = "  <-- slower than the US7 target" if seconds > TARGET_SECONDS else ""

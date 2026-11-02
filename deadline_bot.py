@@ -292,17 +292,25 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         session = await moodle.login(username, password)
         login_guard.log_timing("moodle", "sign-in", time.monotonic() - started)
     except MoodleError as exc:
-        _close_flow(user_id, context)
         text = _error_text(exc, lang)
-        if exc.key == "bad_credentials":  # US7: count it; lock after too many
+        if exc.key == "bad_credentials":
+            # US7: count it. Until the account locks, the student types the
+            # password again right here - no command, nothing for the AI chat.
             left = login_guard.record_failure(context.bot_data, "moodle", username)
-            text = f"{text} {login_guard.attempts_text(lang, left)}" if left else login_guard.locked_text(
-                lang, login_guard.LOCK_SECONDS)
+            if left:
+                context.user_data["deadline_user"] = username
+                retry = f"{t('wrong_credentials', lang)} {login_guard.attempts_text(lang, left)}\n{t('retry_password', lang)}"
+                await status.edit_text(retry, reply_markup=_change_user_keyboard(lang))
+                return ASK_PASS
+            text = login_guard.locked_text(lang, login_guard.LOCK_SECONDS)
+        _close_flow(user_id, context)
+        login_guard.note_failed_signin(context.user_data)
         await status.edit_text(text)
         return ConversationHandler.END
     except Exception as exc:  # noqa: BLE001
         _close_flow(user_id, context)
         print(f"[deadline] unexpected error during sign-in: {exc!r}")
+        login_guard.note_failed_signin(context.user_data)
         await status.edit_text(core.msg("unexpected", lang))
         return ConversationHandler.END
     finally:
@@ -310,6 +318,7 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         password = ""  # never kept longer than this request
 
     login_guard.record_success(context.bot_data, "moodle", username)
+    login_guard.note_signed_in(context.user_data)
     context.user_data["moodle"] = session
     _close_flow(user_id, context)
     await status.edit_text(t("linked_ok", lang))
@@ -318,6 +327,26 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if context.user_data.get("login_flow") != "assistant_moodle":
         await _send_deadlines(context.bot, chat_id, context, user_id, lang)
     return ConversationHandler.END
+
+
+def _change_user_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Under "wrong password": the mistake may be in the username instead."""
+    return InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_change_user", lang), callback_data="deadline:newuser")]])
+
+
+async def on_change_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """[👤 Change username] under "wrong password": ask for it again."""
+    lang = user_lang(update, context)
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("deadline_user", None)
+    await query.edit_message_text(t("ask_user", lang))
+    return ASK_USER
+
+
+async def on_stale_change_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """The same button after the sign-in has already ended."""
+    await update.callback_query.answer(t("session_lost", user_lang(update, context)), show_alert=True)
 
 
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -351,4 +380,5 @@ def register_deadline(app: Application) -> None:
         if "/deadline" not in help_text:
             BOT[lang]["help"] = help_text.replace("/lang", f"{HELP_LINE[lang]}\n/lang", 1)
 
+    app.add_handler(CallbackQueryHandler(on_stale_change_user, pattern=r"^deadline:newuser$"))
     app.add_handler(CommandHandler("unlink_moodle", cmd_unlink_moodle))

@@ -372,3 +372,44 @@ async def fetch_transcript(
     if not semesters:
         print(f"[grade] transcript page at {response.url} had no recognisable semesters")
     return semesters
+
+
+# ------------------------------------------------------------ one course --
+
+
+# Roman numbers are numbers: "Calculus II" is "Calculus 2".
+_ROMAN = {"i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6"}
+
+
+def _words(value: str) -> list[str]:
+    return [_ROMAN.get(word, word) for word in re.sub(r"[^\w]+", " ", (value or "").casefold()).split()]
+
+
+def match_courses(semesters: list[Semester], query: str) -> list[tuple[Semester, Course]]:
+    """The courses a student means by `query`, from every semester (a retaken
+    course appears once per attempt): its code ("MAT 156", "mat156") or words
+    of its name as on the transcript ("Discrete Mathematics", "discrete math").
+
+    Nicknames ("дискретка") are turned into the official name by the AI before
+    it asks; this only compares text.
+    """
+    words = _words(query)
+    compact = "".join(words)
+    if not compact:
+        return []
+    # Words start the name's words ("math" -> "mathematics"); numbers must be
+    # exact, so "Calculus 2" is not "Calculus 1".
+    meaningful = [word for word in words if len(word) > 2 or word.isdigit()]
+    found: list[tuple[Semester, Course]] = []
+    for semester in semesters:
+        for course in semester.courses:
+            code = "".join(_words(course.code))
+            name = _words(course.name)
+            by_code = bool(code) and (compact == code or code in compact)
+            by_name = bool(meaningful) and bool(name) and all(
+                any(part == word if word.isdigit() else part.startswith(word) for part in name)
+                for word in meaningful
+            )
+            if by_code or by_name:
+                found.append((semester, course))
+    return found

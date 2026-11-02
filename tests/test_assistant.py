@@ -257,6 +257,51 @@ def transcript():
     ], ects='5', spa='3.67', gpa='3.50')]
 
 
+def two_semesters():
+    """Discrete Mathematics failed, then retaken; Calculus I and II; one course in progress."""
+    return [
+        grade.Semester('2025 - 2026. 1', courses=[
+            grade.Course('MAT 151', 'Calculus I', '3', '6', '78', 'C+', '2.33', ''),
+            grade.Course('MAT 156', 'Discrete Mathematics', '3', '6', '45', 'F', '0', ''),
+        ], ects='12', spa='1.17', gpa='1.17'),
+        grade.Semester('2025 - 2026. 2', courses=[
+            grade.Course('MAT 152', 'Calculus II', '3', '6', '88', 'B+', '3.33', ''),
+            grade.Course('MAT 156', 'Discrete Mathematics', '3', '6', '91', 'A-', '3.67', ''),
+            grade.Course('CSS 217', 'Software Architecture', '3', '5', '', '', '', ''),
+        ], ects='17', spa='3.50', gpa='2.40'),
+    ]
+
+
+class CourseMatchTests(unittest.TestCase):
+    """grade.match_courses: which transcript courses "my grade in ..." means."""
+
+    def codes(self, query):
+        return [(s.title[-1], c.code) for s, c in grade.match_courses(two_semesters(), query)]
+
+    def test_code_in_any_spelling(self):
+        self.assertEqual(self.codes('MAT 152'), [('2', 'MAT 152')])
+        self.assertEqual(self.codes('mat152'), [('2', 'MAT 152')])
+        self.assertEqual(self.codes('my grade for CSS-217?'), [('2', 'CSS 217')])
+
+    def test_name_words_and_every_attempt(self):
+        self.assertEqual(self.codes('Discrete Mathematics'), [('1', 'MAT 156'), ('2', 'MAT 156')])
+        self.assertEqual(self.codes('discrete math'), [('1', 'MAT 156'), ('2', 'MAT 156')])
+        self.assertEqual(self.codes('software architecture'), [('2', 'CSS 217')])
+
+    def test_numbers_are_exact_and_roman_numbers_are_numbers(self):
+        self.assertEqual(self.codes('Calculus'), [('1', 'MAT 151'), ('2', 'MAT 152')])
+        self.assertEqual(self.codes('Calculus 2'), [('2', 'MAT 152')])
+        self.assertEqual(self.codes('Calculus II'), [('2', 'MAT 152')])
+        self.assertEqual(self.codes('calculus 1'), [('1', 'MAT 151')])
+
+    def test_nicknames_and_other_courses_match_nothing(self):
+        # The AI turns "дискретка" into "Discrete Mathematics" before it asks.
+        self.assertEqual(self.codes('дискретка'), [])
+        self.assertEqual(self.codes('Organic Chemistry'), [])
+        self.assertEqual(self.codes(''), [])
+        self.assertEqual(self.codes('of'), [])
+
+
 def next_monday():
     day = datetime.now(rooms.CAMPUS_TZ).date() + timedelta(days=1)
     while day.weekday() != 0:
@@ -279,6 +324,10 @@ class AssistantBotTests(BotHarness):
 
     def all_sent(self):
         return '\n'.join(self.sent_texts())
+
+    def message_with(self, text_part):
+        return next(c.kwargs['text'] for c in reversed(self.send.call_args_list)
+                    if text_part in c.kwargs.get('text', ''))
 
     def buttons_of(self, text_part):
         for c in reversed(self.send.call_args_list):
@@ -413,6 +462,47 @@ class AssistantBotTests(BotHarness):
         self.assertIn('✅', self.last_edit())  # "linked"
         self.assertIn('<b>CSS 217</b>', self.last_text())  # ...and the grades, without /grade again
         self.assertEqual(self.model.chats, [])  # commands do not go through the AI
+
+    def sign_in_with(self, semesters):
+        self.app.user_data[42]['portal'] = {'student_id': '240103149', 'cookies': {}}
+        fetch = patch.object(grade_bot.grade, 'fetch_transcript', new=AsyncMock(return_value=semesters))
+        self.patches.append(fetch)
+        fetch.start()
+
+    async def test_one_course_grade_is_shown_alone(self):
+        self.sign_in_with(two_semesters())
+        self.script(call('get_my_grades', course='Discrete Mathematics'),
+                    say('You got F in the first attempt and A- after retaking it.'))
+        await self.text('What did I get in discrete math?')
+        self.assertEqual(self.message_with('📘'), (
+            '📘 <b>MAT 156</b> · Discrete Mathematics\n🗓 2025–2026, Semester 1 · 6 ECTS\nScore 45 · <b>F</b> · 0\n\n'
+            '📘 <b>MAT 156</b> · Discrete Mathematics\n🗓 2025–2026, Semester 2 · 6 ECTS\nScore 91 · <b>A-</b> · 3.67'))
+        self.assertEqual(self.buttons_of('📘'), [['gr:now']])
+        self.assertIn('You got F in the first attempt and A- after retaking it.', self.all_sent())
+        seen = self.model.results[-1][0][1]
+        self.assertEqual(seen['asked_course'], 'Discrete Mathematics')
+        self.assertEqual(seen['matching_courses'], ['2025 - 2026. 1: MAT 156 Discrete Mathematics F',
+                                                    '2025 - 2026. 2: MAT 156 Discrete Mathematics A-'])
+        self.assertIn('[shown: the grade for MAT 156', self.app.user_data[42]['history'][-1]['text'])
+
+        await self.tap('gr:now')  # "All grades": the usual /grade page, latest semester
+        self.assertIn('<b>CSS 217</b> | Software Architecture | 5 ECTS | <i>Not published</i>', self.last_edit())
+
+    async def test_course_in_progress_is_not_a_zero(self):
+        self.sign_in_with(two_semesters())
+        self.script(call('get_my_grades', course='CSS 217'), say('Software Architecture has no final grade yet.'))
+        await self.text('What is my grade in CSS 217?')
+        self.assertIn('📘 <b>CSS 217</b> · Software Architecture\n🗓 2025–2026, Semester 2 · 5 ECTS\n<i>Not published</i>',
+                      self.all_sent())
+        self.assertIn('attestation', self.model.results[-1][0][1]['not_published_means'])
+
+    async def test_unknown_course_shows_the_latest_semester(self):
+        self.sign_in_with(two_semesters())
+        self.script(call('get_my_grades', course='Organic Chemistry'),
+                    say('I could not find Organic Chemistry on your transcript.'))
+        await self.text('My grade in organic chemistry?')
+        self.assertIn('📊 <b>2025–2026, Semester 2</b>  (2/2)', self.all_sent())
+        self.assertTrue(self.model.results[-1][0][1]['matching_courses'].startswith('none:'))
 
 
 if __name__ == '__main__':

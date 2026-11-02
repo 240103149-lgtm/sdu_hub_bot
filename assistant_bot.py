@@ -44,8 +44,10 @@ import deadline_bot
 import documents
 import documents_bot
 import events_bot
+import grade
 import grade_bot
 import i18n
+import login_guard
 import moodle
 import rooms
 import rooms_bot
@@ -165,13 +167,30 @@ class TelegramToolbox:
             self.cards.append(Card(grade_bot.t("grades_empty", lang)))
             return assistant.ToolResult({"semesters": []}, summary="[grades: the portal has no academic records]")
 
-        text, keyboard = await grade_bot._page(semesters, len(semesters) - 1, lang)
+        query = str(args.get("course") or "").strip()
+        matches = grade.match_courses(semesters, query) if query else []
+        if matches:  # one course: only its grade(s), with a button to all the grades
+            text, keyboard = await grade_bot.course_page(matches, lang)
+        else:
+            text, keyboard = await grade_bot._page(semesters, len(semesters) - 1, lang)
         self.cards.append(Card(text, keyboard, html=True))
-        data = {"semesters": [
+        data: dict[str, Any] = {"semesters": [
             {"semester": s.title, "spa": s.spa, "gpa": s.gpa, "courses": [
                 {"code": c.code, "name": c.name, "ects": c.ects, "grade": _mark(c)} for c in s.courses]}
             for s in semesters
         ]}
+        if any(_mark(c) == "not published" for s in semesters for c in s.courses):
+            data["not_published_means"] = (
+                "the course is in progress: the transcript holds only final grades, and the current "
+                "attestation (midterm) points are not available to the bot - they are on the portal")
+        if query:
+            data["asked_course"] = query
+            data["matching_courses"] = [f"{s.title}: {c.code} {c.name} {_mark(c)}" for s, c in matches] or (
+                "none: the card shows the latest semester instead; say the course was not found and "
+                "name the closest courses from the list")
+        if matches:
+            shown = "; ".join(f"{c.code} {c.name} {_mark(c)} ({s.title})" for s, c in matches)
+            return assistant.ToolResult(data, summary=f"[shown: the grade for {shown}]")
         latest = semesters[-1]
         courses = ", ".join(f"{c.code} {_mark(c)}" for c in latest.courses)
         summary = (f"[shown: grades, {len(semesters)} semesters; latest {latest.title}: {courses}; "
@@ -395,6 +414,15 @@ async def answer_question(update: Update, context: ContextTypes.DEFAULT_TYPE, qu
     chat_id = update.effective_chat.id
     text = (question if question is not None else (update.effective_message.text or "")).strip()
     if not text:
+        return
+    if question is None and login_guard.maybe_secret(context.user_data, text):
+        # Right after a sign-in ended, a lone word with digits or symbols is most
+        # likely the password typed again: it must not reach the model or the history.
+        try:
+            await update.effective_message.delete()
+        except TelegramError as exc:
+            print(f"[assistant] could not delete a possible password: {exc}")
+        await context.bot.send_message(chat_id=chat_id, text=t("secret_guard", lang))
         return
 
     history: list[dict[str, str]] = context.user_data.setdefault("history", [])

@@ -109,6 +109,7 @@ async def _forget(message) -> None:
 
 def _link(context: ContextTypes.DEFAULT_TYPE, student_id: str, cookies: dict[str, str]) -> None:
     context.user_data["portal"] = {"student_id": student_id, "cookies": cookies}
+    login_guard.note_signed_in(context.user_data)
 
 
 # --------------------------------------------------------------- handlers ----
@@ -165,17 +166,9 @@ async def on_student_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return ASK_PASSWORD
 
 
-# The command a student sends to try again, for each sign-in that uses the portal.
-RETRY_COMMANDS = {"documents": "/documents", "login": "/login", "assistant_portal": "/login"}
-
-
-def _bad_credentials(context: ContextTypes.DEFAULT_TYPE, student_id: str, lang: str) -> str:
-    """US7: "Invalid credentials", the attempts left - or the lock message."""
-    left = login_guard.record_failure(context.bot_data, "portal", student_id)
-    if not left:
-        return login_guard.locked_text(lang, login_guard.LOCK_SECONDS)
-    command = RETRY_COMMANDS.get(context.user_data.get("login_flow"), "/grade")
-    return f"{t('bad_credentials', lang).format(command=command)} {login_guard.attempts_text(lang, left)}"
+def _change_id_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Under "wrong password": the mistake may be in the student number instead."""
+    return InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_change_id", lang), callback_data="grade:newid")]])
 
 
 async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -204,13 +197,24 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     except PortalError as exc:
         await login.close()
         if exc.key == "bad_credentials":
-            await status.edit_text(_bad_credentials(context, student_id, lang))
+            # US7: every wrong password counts. Until the account locks, the
+            # student simply types the password again here - no command needed,
+            # and a retyped password can never land in the AI chat.
+            left = login_guard.record_failure(context.bot_data, "portal", student_id)
+            if left:
+                context.user_data["grade_sid"] = student_id
+                text = f"{t('wrong_credentials', lang)} {login_guard.attempts_text(lang, left)}\n{t('retry_password', lang)}"
+                await status.edit_text(text, reply_markup=_change_id_keyboard(lang))
+                return ASK_PASSWORD
+            await status.edit_text(login_guard.locked_text(lang, login_guard.LOCK_SECONDS))
         else:
             await status.edit_text(_error_text(exc, lang))
+        login_guard.note_failed_signin(context.user_data)
         return ConversationHandler.END
     except Exception as exc:  # noqa: BLE001 - the student still gets an answer
         await login.close()
         print(f"[grade] unexpected error during sign-in: {exc!r}")
+        login_guard.note_failed_signin(context.user_data)
         await status.edit_text(core.msg("unexpected", lang))
         return ConversationHandler.END
     finally:
@@ -254,14 +258,17 @@ async def on_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 await context.bot.send_message(update.effective_chat.id, t("bad_code", lang))
                 return ASK_CODE
             await _drop_pending(user_id)
+            login_guard.note_failed_signin(context.user_data)
             await context.bot.send_message(update.effective_chat.id, t("too_many_codes", lang))
             return ConversationHandler.END
         await _drop_pending(user_id)
+        login_guard.note_failed_signin(context.user_data)
         await context.bot.send_message(update.effective_chat.id, _error_text(exc, lang))
         return ConversationHandler.END
     except Exception as exc:  # noqa: BLE001
         await _drop_pending(user_id)
         print(f"[grade] unexpected error during 2FA: {exc!r}")
+        login_guard.note_failed_signin(context.user_data)
         await context.bot.send_message(update.effective_chat.id, core.msg("unexpected", lang))
         return ConversationHandler.END
     finally:
@@ -271,6 +278,21 @@ async def on_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _drop_pending(user_id)
     await context.bot.send_message(update.effective_chat.id, t("linked_ok", lang))
     return ConversationHandler.END
+
+
+async def on_change_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """[🔢 Change student number] under "wrong password": ask for it again."""
+    lang = user_lang(update, context)
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("grade_sid", None)
+    await query.edit_message_text(t("ask_id", lang))
+    return ASK_ID
+
+
+async def on_stale_change_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """The same button after the sign-in has already ended."""
+    await update.callback_query.answer(t("session_lost", user_lang(update, context)), show_alert=True)
 
 
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -403,6 +425,45 @@ async def _page(semesters: list[grade.Semester], index: int, lang: str):
     )
 
 
+def _render_courses(
+    matches: list[tuple[grade.Semester, grade.Course]], lang: str, names: dict[str, str] | None = None
+) -> str:
+    """One block per matching course - every attempt, when it was retaken:
+
+        📘 MAT 156 · Discrete Mathematics
+        🗓 2025–2026, Semester 2 · 6 ECTS
+        Score 91 · A- · 3.67
+    """
+    names = names or {}
+    blocks = []
+    for semester, course in matches:
+        mark = course.letter or course.score.replace("*", "").strip()
+        details = [_e(_title(semester, lang))] + ([f"{_e(course.ects)} ECTS"] if course.ects else [])
+        if mark and mark.upper() != "IP":
+            result = [f"<b>{_e(mark)}</b>"]
+            score = course.score.replace("*", "").strip()
+            if course.letter and score:
+                result.insert(0, f"{_e(t('score', lang))} {_e(score)}")
+            if course.points:
+                result.append(_e(course.points))
+        else:  # US5: in progress or not published yet - never a zero
+            result = [f"<i>{_e(t('not_published', lang))}</i>"]
+        blocks.append("\n".join([
+            f"📘 <b>{_e(course.code)}</b> · {_e(names.get(course.name, course.name))}",
+            "🗓 " + " · ".join(details),
+            " · ".join(result),
+        ]))
+    return "\n\n".join(blocks)
+
+
+async def course_page(matches: list[tuple[grade.Semester, grade.Course]], lang: str):
+    """Text + keyboard for the grades of one course (the AI assistant's
+    "my grade in Discrete Mathematics"); the button opens all the grades."""
+    names = await _translate_names([course.name for _, course in matches], lang)
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_all_grades", lang), callback_data="gr:now")]])
+    return _render_courses(matches, lang, names), keyboard
+
+
 def _keyboard(index: int, total: int, lang: str) -> InlineKeyboardMarkup:
     """Top: Previous / Now. Below: the semester numbers, the open one marked."""
     top = []
@@ -514,4 +575,5 @@ def register_grade(app: Application) -> None:
             BOT[lang]["help"] = help_text.replace("/lang", f"{HELP_LINE[lang]}\n/lang", 1)
 
     app.add_handler(CallbackQueryHandler(on_grade_nav, pattern=r"^gr:(now|retry|\d+)$"))
+    app.add_handler(CallbackQueryHandler(on_stale_change_id, pattern=r"^grade:newid$"))
     app.add_handler(CommandHandler("unlink", cmd_unlink))
