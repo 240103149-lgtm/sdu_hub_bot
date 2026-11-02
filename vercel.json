@@ -24,6 +24,7 @@
           "doc_check.py",
           "assistant.py",
           "assistant_bot.py",
+          "academic_calendar.py",
           "data/*.json",
           "locales/*.json",
           "static/**",

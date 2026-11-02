@@ -78,7 +78,20 @@ TOOLS: tuple[Tool, ...] = (
     Tool(
         "get_my_deadlines",
         "The student's own upcoming (and recently missed) assignment and quiz deadlines from "
-        "Moodle (moodle.sdu.edu.kz), with the course, the title and the due time.",
+        "Moodle (moodle.sdu.edu.kz), with the course, the title and the due time. Only course "
+        "work: NOT university dates such as registration, add/drop, withdrawal, exams or "
+        "holidays - those are get_academic_calendar and the knowledge base.",
+        _args(),
+    ),
+    Tool(
+        "get_academic_calendar",
+        "The official academic calendar of the current term: when course registration, add/drop, "
+        "late registration, early and late withdrawal, pre-final and final grades, final exams, "
+        "the FX application and resit exams open and close. When the student is signed in to the "
+        "portal it shows the portal's System Calendar (exact dates and times, open now or not, and "
+        "the student's own permissions, such as their own registration window); otherwise it says "
+        "to answer from the academic calendar in the knowledge base. Never ask for a sign-in for "
+        "these dates.",
         _args(),
     ),
     Tool(
@@ -127,11 +140,19 @@ TOOLS: tuple[Tool, ...] = (
 SERVICES_RULE = """- TOOLS: you can act, not only answer. The student's own data and the bot's
   services are tools - use them instead of telling the student to type a
   command: get_my_grades (their grades, GPA, transcript), get_my_deadlines
-  (their Moodle deadlines), find_free_rooms (free classrooms; turn "now",
+  (their Moodle deadlines), get_academic_calendar (university dates),
+  find_free_rooms (free classrooms; turn "now",
   "tomorrow", "after 2 pm" into a date and HH:MM), get_campus_events,
   get_registration_guide, get_required_documents (enrollment documents and the
   student's own submission), sign_in (when they ask to log in). Do not use the
   fallback sentence for these questions.
+- University dates - course registration, add/drop, withdrawal ("уиздроул",
+  "withdraw"), final exams, FX, resits - are answered from the academic
+  calendar in the knowledge base with the exact dates, or with
+  get_academic_calendar when the student is signed in to the portal (see the
+  end of this prompt). Never use get_my_deadlines for them: it is only the student's own
+  Moodle assignments and quizzes. Holidays, the first and last day of classes
+  and the next semesters are in the knowledge base.
 - Through these tools you CAN see the student's own grades and deadlines (the
   bot signs them in securely when needed), so never say you have no access to
   them. "What did I get in physics?", "Сколько я получил по истории
@@ -181,6 +202,10 @@ SHOWN_NOTE = ("The student already sees all of this as a card right below your r
 
 class Toolbox(Protocol):
     async def run(self, name: str, args: dict[str, Any], lang: str) -> ToolResult: ...
+
+    def notes(self) -> str:
+        """Extra rules about this student right now (e.g. signed in to the portal); may be ""."""
+        ...
 
 
 @dataclass
@@ -369,6 +394,8 @@ async def run(question: str, history: Sequence[Any] | None, lang: str, toolbox: 
         raise core.AssistantError("too_long", status_code=400)
 
     prompt, reply_lang = core.system_prompt(text, lang, services=SERVICES_RULE)
+    # After the long knowledge base, so the model reads it last.
+    prompt += toolbox.notes() if hasattr(toolbox, "notes") else ""
     chat = new_chat(prompt, _history(history), text)
     answer = Answer(text="", lang=reply_lang)
 
