@@ -669,6 +669,23 @@ class US7AuthenticationTests(BotHarness):
         self.ai.assert_not_awaited()
         self.assertTrue(self.last_text().startswith('🔒 That looked like a password'))
 
+    async def test_password_after_a_lost_sign_in_step_never_reaches_the_ai(self):
+        """Seen live on Vercel: the sign-in step was lost between two messages, so
+        the retyped password went to the AI chat."""
+        await self.text('Test_pass42')  # no sign-in step and no failed sign-in on record
+        self.ai.assert_not_awaited()
+        self.assertEqual(self.delete.await_count, 1)
+        self.assertTrue(self.last_text().startswith('🔒 That looked like a password'))
+        await self.text('CSS217')  # a course code still goes to the AI
+        self.ai.assert_awaited_once()
+
+    def test_what_looks_like_a_password_with_no_sign_in(self):
+        for text in ('Test_pass42', 'Qwerty123', 'zhanna2004!', 'P@ssw0rd'):
+            self.assertTrue(login_guard.looks_like_secret(text), text)
+        for text in ('CSS217', 'MAT 156', 'F104', '14:00', '2026-11-02', 'Hello!', 'add-drop?', 'Рахмет!',
+                     'student@sdu.edu.kz', 'https://sdu.edu.kz', 'How do I log in?', '240103149', 'qwerty'):
+            self.assertFalse(login_guard.looks_like_secret(text), text)
+
     def test_what_looks_like_a_password(self):
         for text in ('MyPass123!', 'qwerty12', 'abc$defg', 'Zhannur!', 'Qwerty12?'):
             self.assertTrue(login_guard.looks_like_password(text), text)

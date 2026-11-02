@@ -449,9 +449,12 @@ async def answer_question(update: Update, context: ContextTypes.DEFAULT_TYPE, qu
     text = (question if question is not None else (update.effective_message.text or "")).strip()
     if not text:
         return
-    if question is None and login_guard.maybe_secret(context.user_data, text):
-        # Right after a sign-in ended, a lone word with digits or symbols is most
-        # likely the password typed again: it must not reach the model or the history.
+    private = update.effective_chat.type == "private"
+    if question is None and (login_guard.maybe_secret(context.user_data, text)
+                             or private and login_guard.looks_like_secret(text)):
+        # Right after a sign-in ended - or when Vercel lost the sign-in step -
+        # a lone word like this is most likely a password: it must not reach
+        # the model or the history.
         try:
             await update.effective_message.delete()
         except TelegramError as exc:

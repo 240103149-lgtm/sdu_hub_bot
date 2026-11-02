@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import time
 
 import core
@@ -88,6 +89,24 @@ def looks_like_password(text: str | None) -> bool:
     word = (text or "").strip().rstrip("?")
     return (4 <= len(word) <= 64 and not any(ch.isspace() for ch in word)
             and any(ch.isalnum() for ch in word) and any(not ch.isalpha() for ch in word))
+
+
+# Course codes (MAT 156, CSS217) and e-mail addresses look like a word with digits too.
+_COURSE_CODE = re.compile(r"^[A-Za-z]{2,4}\s?\d{3}[A-Za-z]?$")
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
+
+
+def looks_like_secret(text: str | None) -> bool:
+    """A password typed into the chat with no sign-in step waiting for it - on
+    Vercel the step can be lost between two messages. One word of 6+ characters
+    with a letter and a digit ("Qwerty123"): a password far more often than a
+    question. Course codes, e-mails and links are not."""
+    word = (text or "").strip().rstrip("?!.,)")
+    if not 6 <= len(word) <= 64 or any(ch.isspace() for ch in word):
+        return False
+    if _COURSE_CODE.match(word) or _EMAIL.match(word) or "://" in word:
+        return False
+    return any(ch.isalpha() for ch in word) and any(ch.isdigit() for ch in word)
 
 
 def maybe_secret(user_data: dict, text: str) -> bool:
