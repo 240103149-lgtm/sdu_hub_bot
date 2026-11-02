@@ -11,8 +11,9 @@ into one document type; the bot compares that type with the requested one:
     requested UNT certificate + UNT certificate .......... ok      (saved)
     requested UNT certificate + timetable / passport ..... wrong   (not saved)
     blurred, dark or cut-off photo ....................... unclear (send a clearer one)
-    the AI could not be reached .......................... unavailable (saved; the
-                                                            admissions office checks it by hand)
+    the AI could not be reached .......................... unavailable (not saved yet: the
+                                                            student checks it again or sends
+                                                            it to be checked by hand)
 
 The model is NOT told which document was requested, so it cannot lean towards
 the expected answer: it only names what it sees.
@@ -69,6 +70,9 @@ DESCRIPTIONS = {
 OTHER_KINDS = ("passport", "identity_card", "student_id_card", "timetable", "other_document", "not_a_document")
 
 MODEL = os.getenv("DOCUMENT_CHECK_MODEL", "").strip()
+# Tried after the configured models, so that a fallback model that no longer
+# exists or a model over its per-minute quota does not switch the check off.
+LAST_RESORT = "gemini-flash-lite-latest"
 BUDGET = float(os.getenv("DOCUMENT_CHECK_SECONDS", "30"))  # all attempts together
 ATTEMPT_SECONDS = 15  # one request
 ATTEMPTS = 2          # per model
@@ -151,10 +155,12 @@ def _gemini():
 
 def _models() -> list[str]:
     if MODEL:
-        return [MODEL]
-    if core.AI_PROVIDER == "gemini":
-        return [core.MODEL] + ([core.FALLBACK_MODEL] if core.FALLBACK_MODEL else [])
-    return [os.getenv("GEMINI_MODEL", "").strip() or "gemini-flash-lite-latest"]
+        models = [MODEL]
+    elif core.AI_PROVIDER == "gemini":
+        models = [core.MODEL, core.FALLBACK_MODEL]
+    else:
+        models = [os.getenv("GEMINI_MODEL", "").strip()]
+    return list(dict.fromkeys(m.strip() for m in models + [LAST_RESORT] if m and m.strip()))
 
 
 def enabled() -> bool:
@@ -201,8 +207,8 @@ def classify(data: bytes, mime_type: str, catalog: documents.Catalog) -> dict:
                 last = exc
                 code = exc.code if isinstance(exc, errors.APIError) else ""
                 print(f"[documents] AI check attempt {attempt + 1} ({model}) failed: {type(exc).__name__} {code}".rstrip())
-                if isinstance(exc, errors.APIError) and exc.code not in core.RETRYABLE:
-                    break  # this model will not work (e.g. it no longer exists): try the next one
+                if isinstance(exc, errors.APIError) and (exc.code not in core.RETRYABLE or exc.code == 429):
+                    break  # this model will not work now (gone, or over its quota): try the next one
                 if attempt + 1 < ATTEMPTS:
                     time.sleep(1)
     raise last or TimeoutError("no model is configured for the document check")
@@ -229,7 +235,7 @@ def check(data: bytes, mime_type: str, requested: documents.DocType, catalog: do
     started = time.monotonic()
     try:
         result = classify(data, mime_type, catalog)
-    except Exception:  # noqa: BLE001 - the student is asked to send it again
+    except Exception:  # noqa: BLE001 - the student checks it again or sends it to be checked by hand
         print(f"[documents] AI check unavailable for {requested.id} after {time.monotonic() - started:.1f}s")
         return Verdict("unavailable")
     verdict = decide(requested, result)

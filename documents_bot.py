@@ -313,7 +313,8 @@ async def show_documents(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 @guarded
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """docs:track:<id> · docs:tracks · docs:up:<doc> · docs:stop · docs:submit · docs:refresh"""
+    """docs:track:<id> · docs:tracks · docs:up:<doc> · docs:stop · docs:submit · docs:refresh
+    · docs:recheck · docs:unchecked"""
     query = update.callback_query
     lang = user_lang(update, context)
     chat_id = update.effective_chat.id
@@ -345,6 +346,9 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if action == "submit":
         await _submit(update, context, catalog, student_id, lang)
+        return
+    if action in ("recheck", "unchecked"):
+        await _unchecked_upload(update, context, catalog, student_id, action, lang)
         return
     await query.answer()
     await _edit(update, *_board(student_id, lang))
@@ -437,18 +441,56 @@ async def on_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _send(context.bot, chat_id, text)
         return
 
+    upload = {"type": doc.id, "kind": kind, "file_id": item.file_id, "file_name": file_name,
+              "mime_type": mime_type, "file_size": item.file_size}
     verdict = await _check_type(context, chat_id, catalog, doc, item.file_id, file_name, mime_type, lang)
     if verdict.outcome in ("wrong", "unclear"):
         return  # not saved; the document stays chosen, so the right file can follow
+    if verdict.outcome == "unavailable":
+        # Not saved either: the student checks it again or sends it to be checked by hand.
+        context.user_data["doc_unchecked"] = {**upload, "at": time.time()}
+        return
+    await _save_upload(context, chat_id, catalog, student_id, doc, upload, lang)
 
+
+async def _save_upload(context, chat_id: int, catalog, student_id: str, doc, upload: dict, lang: str) -> None:
     submission = documents.store().save(
-        catalog, student_id, chat_id, doc.id,
-        kind=kind, file_id=item.file_id, file_name=file_name, mime_type=mime_type, file_size=item.file_size,
+        catalog, student_id, chat_id, doc.id, kind=upload["kind"], file_id=upload["file_id"],
+        file_name=upload["file_name"], mime_type=upload["mime_type"], file_size=upload["file_size"],
     )
     context.user_data.pop("doc_pending", None)
-    saved = t("saved", lang).format(doc=doc.label(lang), file=_file_label(file_name, item.file_size, kind, lang))
-    text = f"{saved}\n\n{checklist_text(catalog, submission, lang)}"
+    context.user_data.pop("doc_unchecked", None)
+    file = _file_label(upload["file_name"], upload["file_size"], upload["kind"], lang)
+    text = f"{t('saved', lang).format(doc=doc.label(lang), file=file)}\n\n{checklist_text(catalog, submission, lang)}"
     await _send(context.bot, chat_id, text, checklist_keyboard(catalog, submission, lang))
+
+
+async def _unchecked_upload(update, context, catalog, student_id: str, action: str, lang: str) -> None:
+    """[🔄 Check again] / [📤 Send without the check] under "the automatic check
+    is not available": the file waits in user_data until one is tapped."""
+    query = update.callback_query
+    chat_id = update.effective_chat.id
+    upload = context.user_data.get("doc_unchecked")
+    doc = catalog.get(upload["type"]) if upload else None
+    submission = documents.store().get(student_id)
+    if doc is None or submission is None or submission.track not in doc.tracks \
+            or time.time() - upload.get("at", 0) > UPLOAD_TTL:
+        context.user_data.pop("doc_unchecked", None)
+        await query.answer(t("unchecked_expired", lang), show_alert=True)
+        return
+    await query.answer()
+    await _set_buttons(query, None)  # each choice is made once
+    if action == "recheck":
+        verdict = await _check_type(context, chat_id, catalog, doc, upload["file_id"],
+                                    upload["file_name"], upload["mime_type"], lang)
+        if verdict.outcome == "unavailable":
+            upload["at"] = time.time()  # still waiting: the new message has the same two buttons
+            return
+        if verdict.outcome in ("wrong", "unclear"):
+            context.user_data.pop("doc_unchecked", None)
+            context.user_data["doc_pending"] = {"type": doc.id, "at": time.time()}  # the right file can follow
+            return
+    await _save_upload(context, chat_id, catalog, student_id, doc, upload, lang)
 
 
 AI_MIME = {"pdf": "application/pdf", "jpg": "image/jpeg", "png": "image/png"}
@@ -483,19 +525,23 @@ async def _check_type(context, chat_id: int, catalog, doc, file_id: str, file_na
     finally:
         typing.cancel()
 
-    name = doc.label(lang)
+    name, markup = doc.label(lang), None
     if verdict.outcome == "wrong":
         text = t("check_wrong", lang).format(doc=name, kind=_kind_name(verdict.detected, catalog, lang))
     elif verdict.outcome == "unclear":
         text = t("check_unclear", lang).format(doc=name)
     elif verdict.outcome == "unavailable":
         text = t("check_unavailable", lang)
+        markup = InlineKeyboardMarkup([[
+            InlineKeyboardButton(t("btn_recheck", lang), callback_data="docs:recheck"),
+            InlineKeyboardButton(t("btn_unchecked", lang), callback_data="docs:unchecked"),
+        ]])
     else:
         text = t("check_ok", lang).format(doc=name)
     try:
-        await status.edit_text(text)
+        await status.edit_text(text, reply_markup=markup)
     except TelegramError:
-        await context.bot.send_message(chat_id, text)
+        await context.bot.send_message(chat_id, text, reply_markup=markup)
     return verdict
 
 

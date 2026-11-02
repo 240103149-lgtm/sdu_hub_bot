@@ -10,6 +10,7 @@ os.environ.setdefault('GEMINI_API_KEY', 'offline-test-key')
 os.environ.setdefault('GEMINI_MODEL', 'offline-test-model')
 os.environ.setdefault('TELEGRAM_BOT_TOKEN', '123456:offline-test-token')
 
+import contextlib
 from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
@@ -18,10 +19,12 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from google.genai import errors
 from telegram import Chat, Message, Update, User
 from telegram.ext import ExtBot
 
 import assistant
+import core
 import doc_check
 import documents
 import documents_bot
@@ -154,6 +157,31 @@ class DocCheckTests(unittest.TestCase):
         self.assertIn('requested=unt_certificate detected=timetable', logged)
         for secret in ('SPECIMEN', 'SURNAME', '950101300123'):
             self.assertNotIn(secret, logged)
+
+    def test_a_busy_or_missing_model_hands_over_to_the_next(self):
+        """A model over its per-minute quota (429) is not asked again, a model that
+        no longer exists (404) neither; the last resort still answers."""
+        asked = []
+
+        def generate_content(model, contents, config):
+            asked.append(model)
+            if model == 'primary-model':
+                raise errors.ClientError(429, {'error': {'code': 429, 'message': 'quota', 'status': 'RESOURCE_EXHAUSTED'}})
+            if model == 'gemini-2.5-flash-lite':
+                raise errors.ClientError(404, {'error': {'code': 404, 'message': 'gone', 'status': 'NOT_FOUND'}})
+            return SimpleNamespace(text='{"document_type": "not_a_document", "readable": true, "confidence": "high"}')
+
+        client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+        photo = self.catalog.get('photo_3x4')
+        with patch.object(core, 'AI_PROVIDER', 'gemini'), patch.object(core, 'MODEL', 'primary-model'), \
+             patch.object(core, 'FALLBACK_MODEL', 'gemini-2.5-flash-lite'), patch.object(doc_check, 'MODEL', ''), \
+             patch.object(doc_check, '_gemini', return_value=client), \
+             patch.object(doc_check, 'enabled', return_value=True), patch('builtins.print'):
+            verdict = doc_check.check(b'synthetic picture', 'image/jpeg', photo, self.catalog)
+        self.assertEqual(asked, ['primary-model', 'gemini-2.5-flash-lite', doc_check.LAST_RESORT])
+        self.assertEqual((verdict.outcome, verdict.detected), ('wrong', 'not_a_document'))
+        with patch.object(doc_check, 'MODEL', doc_check.LAST_RESORT):
+            self.assertEqual(doc_check._models(), [doc_check.LAST_RESORT])  # never twice
 
     def test_unavailable_model_and_switched_off_check(self):
         unt = self.catalog.get('unt_certificate')
@@ -587,14 +615,19 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
 
     # ------------------------------------------------------- the AI check ----
 
-    async def checked_upload(self, doc_id, result, name='upload.pdf', photo=False):
-        """Upload a file for `doc_id` while the AI check answers `result`
-        (a dict, or an exception for an unavailable model)."""
+    @contextlib.contextmanager
+    def ai_check(self, result):
+        """The AI check answers `result`: a dict, or an exception for an unavailable model."""
         telegram_file = SimpleNamespace(download_as_bytearray=AsyncMock(return_value=bytearray(b'%PDF-1.4 test')))
         classify = patch.object(doc_check, 'classify', side_effect=result if isinstance(result, Exception) else None,
                                 return_value=None if isinstance(result, Exception) else result)
         with patch.object(doc_check, 'enabled', return_value=True), \
              patch.object(ExtBot, 'get_file', new=AsyncMock(return_value=telegram_file)), classify as model:
+            yield model
+
+    async def checked_upload(self, doc_id, result, name='upload.pdf', photo=False):
+        """Upload a file for `doc_id` while the AI check answers `result`."""
+        with self.ai_check(result) as model:
             await self.tap(f'docs:up:{doc_id}')
             if photo:
                 await self.upload(photo=True)
@@ -641,13 +674,62 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('photo_3x4', self.submission().documents)
         self.ai.assert_not_awaited()
 
-    async def test_ai_check_unavailable_keeps_the_file_for_manual_review(self):
+    def choices(self):
+        return [b.callback_data for row in self.edit.call_args.kwargs['reply_markup'].inline_keyboard for b in row]
+
+    async def test_ai_check_unavailable_saves_nothing_until_the_student_chooses(self):
+        """The live bot saved a photo of trees as «Photo 3×4 cm» when the check was down."""
         await self.start_checklist()
-        await self.checked_upload('unt_certificate', TimeoutError('the model is overloaded'), name='unt.pdf')
+        await self.checked_upload('photo_3x4', TimeoutError('the model is overloaded'), photo=True)
         self.assertEqual(self.edit.call_args.kwargs['text'],
-                         '⚠️ The automatic check is not available right now, so the admissions office will '
-                         'check this file by hand.')
-        self.assertIn('unt_certificate', self.submission().documents)
+                         '⚠️ The automatic check is not available right now, so the file has not been saved yet. '
+                         'Check it again, or send it without the check — then the admissions office will check '
+                         'it by hand.')
+        self.assertEqual(self.choices(), ['docs:recheck', 'docs:unchecked'])
+        self.assertNotIn('photo_3x4', self.submission().documents)
+
+        await self.tap('docs:unchecked')  # sent as it is: the admissions office checks it by hand
+        self.assertIn('«Photo 3×4 cm» uploaded', self.last_text())
+        self.assertEqual(self.submission().documents['photo_3x4'].status, documents.UPLOADED)
+        self.assertIsNone(self.edit_markup.call_args.kwargs['reply_markup'])  # the choice is made once
+        self.assertNotIn('doc_unchecked', self.app.user_data[42])
+        await self.tap('docs:unchecked')
+        self.assertEqual(self.answer.call_args.kwargs['show_alert'], True)
+        self.assertIn('no longer waiting', self.answer.call_args.kwargs['text'])
+
+    async def test_check_again_after_the_outage(self):
+        await self.start_checklist()
+        await self.checked_upload('photo_3x4', TimeoutError('busy'), photo=True)
+        with self.ai_check(TimeoutError('still busy')) as model:
+            await self.tap('docs:recheck')
+        model.assert_called_once()
+        self.assertEqual(self.choices(), ['docs:recheck', 'docs:unchecked'])  # still waiting
+        self.assertIn('doc_unchecked', self.app.user_data[42])
+
+        with self.ai_check({'document_type': 'not_a_document', 'readable': True, 'confidence': 'high'}):
+            await self.tap('docs:recheck')
+        self.assertEqual(self.edit.call_args.kwargs['text'],
+                         "❌ This file doesn't look like «Photo 3×4 cm» — it looks like a picture, not a document. "
+                         "It was not saved. Please send «Photo 3×4 cm».")
+        self.assertNotIn('photo_3x4', self.submission().documents)
+        self.assertNotIn('doc_unchecked', self.app.user_data[42])
+        self.assertEqual(self.app.user_data[42]['doc_pending']['type'], 'photo_3x4')  # the right photo can follow
+
+        await self.checked_upload('photo_3x4', TimeoutError('busy'), photo=True)
+        with self.ai_check({'document_type': 'portrait_photo', 'readable': True, 'confidence': 'high'}):
+            await self.tap('docs:recheck')
+        self.assertIn('«Photo 3×4 cm» uploaded', self.last_text())
+        self.assertIn('photo_3x4', self.submission().documents)
+
+    async def test_an_old_check_again_button_does_nothing(self):
+        await self.start_checklist()
+        await self.checked_upload('photo_3x4', TimeoutError('busy'), photo=True)
+        self.app.user_data[42]['doc_unchecked']['at'] -= documents_bot.UPLOAD_TTL + 1
+        with self.ai_check({'document_type': 'portrait_photo', 'readable': True, 'confidence': 'high'}) as model:
+            await self.tap('docs:recheck')
+        model.assert_not_called()
+        self.assertIn('no longer waiting', self.answer.call_args.kwargs['text'])
+        self.assertNotIn('photo_3x4', self.submission().documents)
 
     async def test_missing_checklist_file_is_explained(self):
         self.link_portal()
