@@ -299,6 +299,20 @@
     "kind_other_document": "a different document",
     "kind_not_a_document": "a picture, not a document"
   },
+  "announcements": {
+    "heading": "SDU academic news",
+    "empty": "No academic news found.",
+    "limited": "Some sources are currently unavailable.",
+    "subscribe": "Subscribe",
+    "unsubscribe": "Unsubscribe",
+    "subscribed": "Subscribed",
+    "unsubscribed": "Unsubscribed",
+    "private": "Open a private chat with the bot to subscribe.",
+    "unavailable": "Subscriptions are currently unavailable.",
+    "notification": "New SDU announcement",
+    "menu": "SDU academic news",
+    "help_line": "/uni_announcments — SDU academic news"
+  },
   "web": {
     "title": "University Knowledge Hub",
     "tabChat": "Ask a question",

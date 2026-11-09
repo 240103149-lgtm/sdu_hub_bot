@@ -306,6 +306,7 @@ def welcome_text(update: Update, lang: str) -> str:
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = user_lang(update, context)
+    await refresh_private_menu(update, context, lang)
     await reply(update.effective_message, welcome_text(update, lang), reply_markup=home_keyboard(lang))
 
 
@@ -344,20 +345,23 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await edit_or_reply(update, text("choose_lang", lang), reply_markup=language_keyboard())
 
 
-async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    chosen = core.normalize_lang(query.data.split(":", 1)[-1])
-    context.user_data["lang"] = chosen
-    # "Language switched" is a short pop-up, not one more message in the chat.
-    await query.answer(text("lang_set", chosen))
+async def refresh_private_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, lang: str) -> None:
     if update.effective_chat.type == "private":
-        commands = [BotCommand(name, label) for name, label in COMMAND_LABELS[chosen]]
+        commands = [BotCommand(name, label) for name, label in COMMAND_LABELS[lang]]
         try:
             await context.bot.set_my_commands(
                 commands, scope=BotCommandScopeChat(chat_id=update.effective_chat.id)
             )
         except TelegramError as exc:
             print(f"[bot] could not update the chat command menu: {exc}")
+
+async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    chosen = core.normalize_lang(query.data.split(":", 1)[-1])
+    context.user_data["lang"] = chosen
+    # "Language switched" is a short pop-up, not one more message in the chat.
+    await query.answer(text("lang_set", chosen))
+    await refresh_private_menu(update, context, chosen)
     # The picker becomes the home menu in the new language: no old-language copy is left.
     await edit_or_reply(update, welcome_text(update, chosen), reply_markup=home_keyboard(chosen))
 
@@ -415,8 +419,16 @@ async def on_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """US1 and every service in plain words: the AI assistant answers from the
     knowledge base or opens the student's grades, deadlines, free rooms, events,
     the guide or the documents itself (assistant_bot.py)."""
+    from announcements import news_intent
+    from announcements_bot import show_news
     from assistant_bot import answer_question
 
+    question = update.effective_message.text or ""
+    if len(question) <= core.MAX_QUESTION_LENGTH:
+        lang = news_intent(question, user_lang(update, context))
+        if lang:
+            await show_news(update, context, lang)
+            return
     await answer_question(update, context)
 
 
@@ -465,6 +477,7 @@ def build_application() -> Application:
         .build()
     )
     from accounts_bot import register_accounts
+    from announcements_bot import register_announcements
     from assistant_bot import register_assistant
     from documents_bot import register_documents
     from events_bot import register_events
@@ -472,6 +485,7 @@ def build_application() -> Application:
 
     register_accounts(app)
     register_events(app)
+    register_announcements(app)
     register_rooms(app)
     register_documents(app)
     register_assistant(app)
