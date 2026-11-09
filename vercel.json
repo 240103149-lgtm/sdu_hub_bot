@@ -4,11 +4,27 @@
       "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
-        "includeFiles": ["core.py", "main.py", "telegram_bot.py", "static/**", "knowledge/**"]
+        "includeFiles": [
+          "core.py",
+          "announcements.py",
+          "main.py",
+          "telegram_bot.py",
+          "static/**",
+          "knowledge/**"
+        ]
       }
     }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "api/index.py" }
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/announcements/notify",
+      "schedule": "0 4 * * *"
+    }
   ]
 }

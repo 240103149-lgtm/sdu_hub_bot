@@ -21,7 +21,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 from telegram import Bot
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / ".env")
+sys.path.insert(0, str(ROOT))
 
 
 async def main() -> None:
@@ -44,6 +46,9 @@ async def main() -> None:
         secret_token=secret or None,
         drop_pending_updates=True,
     )
+    from telegram_bot import register_commands
+
+    await register_commands(bot)
     info = await bot.get_webhook_info()
     print(f"[register_webhook] тіркелді: {info.url}")
     if not secret:

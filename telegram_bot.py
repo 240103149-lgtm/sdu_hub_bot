@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import logging
 import os
 import re
 import tempfile
@@ -21,13 +22,14 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+import httpx
 from telegram import (
     BotCommand,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Update,
 )
-from telegram.constants import ChatAction, ParseMode
+from telegram.constants import ChatAction, ChatType, ParseMode
 from telegram.error import TelegramError
 from telegram.ext import (
     Application,
@@ -41,6 +43,7 @@ from telegram.ext import (
 )
 
 import core
+import announcements
 
 # Telegram rejects messages longer than 4096; we leave a little headroom.
 TELEGRAM_LIMIT = 4000
@@ -75,6 +78,7 @@ BOT: dict[str, dict[str, str]] = {
         "help": (
             "<b>Командалар</b>\n"
             "/guide — расписание құру нұсқаулығы\n"
+            "/uni_announcments — SDU жаңалықтары\n"
             "/lang — тілді ауыстыру\n"
             "/reset — әңгіме тарихын тазарту\n"
             "/help — осы анықтама\n\n"
@@ -97,6 +101,7 @@ BOT: dict[str, dict[str, str]] = {
         "help": (
             "<b>Команды</b>\n"
             "/guide — инструкция по составлению расписания\n"
+            "/uni_announcments — новости SDU\n"
             "/lang — сменить язык\n"
             "/reset — очистить историю диалога\n"
             "/help — эта справка\n\n"
@@ -119,6 +124,7 @@ BOT: dict[str, dict[str, str]] = {
         "help": (
             "<b>Commands</b>\n"
             "/guide — course registration guide\n"
+            "/uni_announcments — SDU news\n"
             "/lang — change language\n"
             "/reset — clear the conversation history\n"
             "/help — this help\n\n"
@@ -136,6 +142,7 @@ COMMAND_LABELS: dict[str, list[tuple[str, str]]] = {
     "kk": [
         ("start", "Ботты бастау"),
         ("guide", "Расписание құру нұсқаулығы"),
+        ("uni_announcments", "SDU жаңалықтары"),
         ("lang", "Тілді ауыстыру"),
         ("reset", "Әңгімені тазарту"),
         ("help", "Анықтама"),
@@ -143,6 +150,7 @@ COMMAND_LABELS: dict[str, list[tuple[str, str]]] = {
     "ru": [
         ("start", "Запустить бота"),
         ("guide", "Инструкция по расписанию"),
+        ("uni_announcments", "Новости SDU"),
         ("lang", "Сменить язык"),
         ("reset", "Очистить диалог"),
         ("help", "Справка"),
@@ -150,6 +158,7 @@ COMMAND_LABELS: dict[str, list[tuple[str, str]]] = {
     "en": [
         ("start", "Start the bot"),
         ("guide", "Course registration guide"),
+        ("uni_announcments", "SDU news"),
         ("lang", "Change language"),
         ("reset", "Clear the conversation"),
         ("help", "Help"),
@@ -359,11 +368,66 @@ async def cmd_guide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply(update.message, guide.strip(), reply_markup=portal_keyboard(lang))
 
 
+def news_keyboard(lang: str, topic: str, private: bool) -> InlineKeyboardMarkup:
+    topics = [InlineKeyboardButton(announcements.label(key, lang), callback_data=f"news:view:{key}:{lang}")
+              for key in announcements.TOPICS]
+    rows = [topics[:2], topics[2:]]
+    if private and announcements.subscriptions_enabled():
+        rows.append([
+            InlineKeyboardButton(announcements.label("subscribe", lang), callback_data=f"news:add:{topic}:{lang}"),
+            InlineKeyboardButton(announcements.label("unsubscribe", lang), callback_data=f"news:remove:{topic}:{lang}"),
+        ])
+    return InlineKeyboardMarkup(rows)
+
+
+async def send_news(message, context, lang: str, topic: str) -> None:
+    typing = asyncio.create_task(keep_typing(context.bot, message.chat_id))
+    try:
+        response = await announcements.answer(lang, topic)
+    finally:
+        typing.cancel()
+    await reply(message, response, news_keyboard(lang, topic, message.chat.type == ChatType.PRIVATE))
+
+
+async def cmd_announcements(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    lang = user_lang(update, context)
+    topic = context.args[0].lower() if context.args else "all"
+    await send_news(update.message, context, lang, topic if topic in announcements.TOPICS else "all")
+
+
+async def on_news_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    _, action, topic, lang = query.data.split(":")
+    message = update.effective_message
+    if action == "view":
+        await send_news(message, context, lang, topic)
+        return
+    if message.chat.type != ChatType.PRIVATE or update.effective_user.id != message.chat_id:
+        await reply(message, announcements.label("private", lang))
+        return
+    if announcements.subscriptions_enabled():
+        try:
+            await announcements.subscribe(message.chat_id, lang, topic, action == "add")
+        except (OSError, ValueError, RuntimeError, httpx.HTTPError) as exc:
+            logging.getLogger(__name__).warning("SDU subscription update failed: %s", type(exc).__name__)
+        else:
+            key = "subscribed" if action == "add" else "unsubscribed"
+            await reply(message, f"{announcements.label(key, lang)} · {announcements.label(topic, lang)}")
+            return
+    await reply(message, announcements.label("unavailable", lang))
+
+
 async def on_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """US5: answer a free-text question from the approved knowledge base."""
     lang = user_lang(update, context)
     question = (update.message.text or "").strip()
     if not question:
+        return
+
+    intent = announcements.news_intent(question, lang)
+    if intent and len(question) <= core.MAX_QUESTION_LENGTH:
+        await send_news(update.message, context, *intent)
         return
 
     history: list[dict[str, str]] = context.user_data.setdefault("history", [])
@@ -400,14 +464,16 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 # ---------------------------------------------------------- application ----
 
 
-async def _post_init(app: Application) -> None:
-    """Register the command menu, in all three languages (US6)."""
+async def register_commands(bot) -> None:
+    """Register the command menu in all three languages."""
     default = [BotCommand(name, label) for name, label in COMMAND_LABELS["en"]]
-    await app.bot.set_my_commands(default)
+    await bot.set_my_commands(default)
     for lang in ("kk", "ru"):
         commands = [BotCommand(name, label) for name, label in COMMAND_LABELS[lang]]
-        await app.bot.set_my_commands(commands, language_code=lang)
+        await bot.set_my_commands(commands, language_code=lang)
 
+async def _post_init(app: Application) -> None:
+    await register_commands(app.bot)
     me = await app.bot.get_me()
     print(f"[bot] connected as @{me.username}")
     if not core.knowledge_files():
@@ -436,6 +502,10 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("lang", cmd_lang))
     app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(CommandHandler("guide", cmd_guide))
+    app.add_handler(CommandHandler(["uni_announcments", "uni_announcements"], cmd_announcements))
+    app.add_handler(CallbackQueryHandler(
+        on_news_action, pattern=r"^news:(view|add|remove):(all|events|academics|opportunities):(kk|ru|en)$"
+    ))
     app.add_handler(CallbackQueryHandler(on_lang_chosen, pattern=r"^lang:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_question))
     app.add_handler(
