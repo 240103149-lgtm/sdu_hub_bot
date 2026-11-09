@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -22,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import core
+import announcements
 import i18n
 
 TELEGRAM_MODE = os.getenv("TELEGRAM_MODE", "off").strip().lower()  # off | webhook
@@ -118,11 +120,14 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/api/chat")
-def chat(req: ChatRequest):
+async def chat(req: ChatRequest):
     """US5: answer one free-text question from the approved knowledge base."""
     lang = core.normalize_lang(req.lang)
+    news_lang = announcements.news_intent(req.message, lang)
+    if news_lang and len(req.message) <= core.MAX_QUESTION_LENGTH:
+        return {"reply": await announcements.answer(news_lang)}
     try:
-        reply = core.answer(req.message, [m.model_dump() for m in req.history], lang)
+        reply = await core.answer_async(req.message, [m.model_dump() for m in req.history], lang)
     except core.AssistantError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.localized(lang))
     return {"reply": reply}
@@ -180,6 +185,20 @@ async def telegram_webhook(
     async with _telegram_update_lock:
         await telegram_app.process_update(update)
     return {"ok": True}
+
+
+@app.get("/api/announcements/notify")
+async def notify_announcements(authorization: str = Header(default="")):
+    """Called periodically by the hosting platform or an external scheduler."""
+    secret = os.getenv("CRON_SECRET", "")
+    if not secret or not announcements.subscriptions_enabled():
+        raise HTTPException(status_code=503, detail="Announcement notifications are not configured")
+    if not secrets.compare_digest(authorization.encode(), f"Bearer {secret}".encode()):
+        raise HTTPException(status_code=403, detail="Invalid scheduler credentials")
+    from telegram import Bot
+
+    async with Bot(token=os.environ["TELEGRAM_BOT_TOKEN"]) as bot:
+        return {"sent": await announcements.notify(bot)}
 
 
 # --------------------------------------------------------------- website ----

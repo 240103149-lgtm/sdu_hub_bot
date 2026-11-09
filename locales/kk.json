@@ -299,6 +299,20 @@
     "kind_other_document": "басқа құжат",
     "kind_not_a_document": "құжат емес, жай сурет"
   },
+  "announcements": {
+    "heading": "SDU оқу жаңалықтары",
+    "empty": "Оқу жаңалықтары табылмады.",
+    "limited": "Кейбір дереккөздер қазір қолжетімсіз.",
+    "subscribe": "Жазылу",
+    "unsubscribe": "Жазылымнан шығу",
+    "subscribed": "Жазылым қосылды",
+    "unsubscribed": "Жазылым өшірілді",
+    "private": "Жазылым үшін ботқа жеке жазыңыз.",
+    "unavailable": "Жазылым қызметі қазір қолжетімсіз.",
+    "notification": "SDU-дан жаңа хабарландыру",
+    "menu": "SDU оқу жаңалықтары",
+    "help_line": "/uni_announcments — SDU оқу жаңалықтары"
+  },
   "web": {
     "title": "Университет білім орталығы",
     "tabChat": "Сұрақ қою",
