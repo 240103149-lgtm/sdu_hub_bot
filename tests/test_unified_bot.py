@@ -334,6 +334,20 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.user_data[42]['history'], [])
         self.ai.assert_not_awaited()
 
+    async def test_old_chat_menu_is_replaced_once_on_the_next_message(self):
+        # A chat whose menu was saved before the four-command menu (no menu_version).
+        self.app.user_data[42].pop('menu_version', None)
+        await self.update('any question')
+        self.set_commands.assert_awaited_once()
+        call = self.set_commands.call_args
+        self.assertEqual(call.kwargs['scope'].chat_id, 42)
+        self.assertEqual([(c.command, c.description) for c in call.args[0]], telegram_bot.COMMAND_LABELS['kk'])
+        await self.update('/help')
+        self.set_commands.assert_awaited_once()  # once per chat, not on every message
+        await self.update('/help', user_id=-100, chat_type='group')
+        self.set_commands.assert_awaited_once()  # group chats keep the default menu
+        self.ai.assert_awaited_once()  # the question itself was still answered
+
     async def test_reviewers_also_get_review_in_their_menu(self):
         with patch.dict(os.environ, {'DOCUMENTS_REVIEWER_IDS': '777'}):
             await telegram_bot._post_init(self.app)

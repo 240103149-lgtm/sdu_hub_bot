@@ -42,6 +42,7 @@ from telegram.ext import (
     ContextTypes,
     MessageHandler,
     PicklePersistence,
+    TypeHandler,
     filters,
 )
 
@@ -85,6 +86,10 @@ COMMAND_LABELS: dict[str, list[tuple[str, str]]] = {
     lang: [(name, labels[name]) for name in COMMAND_ORDER]
     for lang, labels in i18n.by_lang("commands").items()
 }
+# Bump when COMMAND_ORDER changes. A chat menu saved by Telegram (set when the
+# student picked a language) overrides the default menu, so each private chat
+# gets its menu set again once, on its next update (refresh_chat_menu).
+MENU_VERSION = 2
 REVIEW_LABEL: dict[str, str] = {lang: labels["review"] for lang, labels in i18n.by_lang("commands").items()}
 
 
@@ -359,6 +364,29 @@ async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await edit_or_reply(update, text("choose_lang", lang), reply_markup=language_keyboard())
 
 
+async def set_chat_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, lang: str) -> None:
+    """Give this private chat the current "/" menu in `lang`."""
+    try:
+        await context.bot.set_my_commands(
+            command_menu(lang, update.effective_user.id),
+            scope=BotCommandScopeChat(chat_id=update.effective_chat.id),
+        )
+        context.user_data["menu_version"] = MENU_VERSION
+    except TelegramError as exc:
+        print(f"[bot] could not update the chat command menu: {exc}")
+
+
+async def refresh_chat_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Runs before every handler: replace a chat menu from an older version
+    (for example the 13 commands before the four-command menu). Once per chat."""
+    chat, user = update.effective_chat, update.effective_user
+    if chat is None or user is None or chat.type != "private" or context.user_data is None:
+        return
+    if context.user_data.get("menu_version") == MENU_VERSION:
+        return
+    await set_chat_menu(update, context, user_lang(update, context))
+
+
 async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     chosen = core.normalize_lang(query.data.split(":", 1)[-1])
@@ -366,13 +394,7 @@ async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # "Language switched" is a short pop-up, not one more message in the chat.
     await query.answer(text("lang_set", chosen))
     if update.effective_chat.type == "private":
-        commands = command_menu(chosen, update.effective_user.id)
-        try:
-            await context.bot.set_my_commands(
-                commands, scope=BotCommandScopeChat(chat_id=update.effective_chat.id)
-            )
-        except TelegramError as exc:
-            print(f"[bot] could not update the chat command menu: {exc}")
+        await set_chat_menu(update, context, chosen)
     # The picker becomes the home menu in the new language: no old-language copy is left.
     await edit_or_reply(update, welcome_text(update, chosen), reply_markup=home_keyboard(chosen))
 
@@ -496,6 +518,7 @@ def build_application() -> Application:
     from events_bot import register_events
     from rooms_bot import register_rooms
 
+    app.add_handler(TypeHandler(Update, refresh_chat_menu), group=-2)
     register_accounts(app)
     register_events(app)
     register_rooms(app)
