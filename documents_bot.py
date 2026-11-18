@@ -47,7 +47,7 @@ import i18n
 import grade_bot
 from documents import MISSING, REJECTED, UNDER_REVIEW, UPLOADED, VERIFIED
 from rooms import CAMPUS_TZ
-from telegram_bot import add_command, keep_typing, on_unsupported, render_chunks, user_lang
+from telegram_bot import keep_typing, on_unsupported, render_chunks, user_lang
 
 UPLOAD_TTL = 600     # seconds a chosen document waits for its file
 REVIEW_BATCH = 30    # files /review sends at once
@@ -59,8 +59,6 @@ TRACK_ICONS = {"grant": "🎓", "paid": "💳"}
 
 T: dict[str, dict[str, str]] = i18n.by_key("documents")  # locales/<lang>.json, section "documents"
 
-MENU = T["menu"]
-HELP_LINE = T["help_line"]
 
 
 def t(key: str, lang: str) -> str:
@@ -707,7 +705,6 @@ def register_documents(app: Application) -> None:
     """/documents itself and the 📄 menu button are entry points of the shared
     sign-in conversation (accounts_bot). This adds the buttons, the file
     handler and the staff commands. Call it before the generic handlers."""
-    add_command("documents", MENU, HELP_LINE)
     private = filters.ChatType.PRIVATE
     app.add_handler(CommandHandler("cancel", on_cancel), group=-1)
     app.add_handler(CallbackQueryHandler(on_button, pattern=r"^docs:"))

@@ -185,15 +185,15 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([c.kwargs['language_code'] for c in self.delete_commands.call_args_list], ['kk', 'ru'])
 
     async def test_start_has_localized_overview_and_seven_buttons(self):
-        for lang, heading in [('kk', '📚 Оқу'), ('ru', '📚 Учёба'), ('en', '📚 Study')]:
+        for lang, heading in [('kk', 'Не керегін жай жаз'), ('ru', 'Просто напиши'), ('en', 'Just write what you need')]:
             self.app.user_data[42]['lang'] = lang
             await self.update('/start')
             sent = self.send.call_args.kwargs
             self.assertIn('SDU Hub', sent['text'])
             self.assertIn(heading, sent['text'])
-            self.assertIn('/deadline', sent['text'])
-            self.assertIn('/documents', sent['text'])
-            self.assertNotIn('/unlink', sent['text'])
+            self.assertIn('/account', sent['text'])
+            for old in ['/deadline', '/grade', '/documents', '/unlink', '/login']:
+                self.assertNotIn(old, sent['text'])
             keyboard = sent['reply_markup'].inline_keyboard
             self.assertEqual([len(row) for row in keyboard], [2, 2, 2, 1])
             self.assertEqual([b.callback_data for row in keyboard for b in row],
@@ -259,7 +259,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.user_data[42]['lang'], 'ru')
         # ...and then into the home menu in the new language: no old copy, no extra message.
         self.assertEqual(self.send.await_count, sent_before)
-        self.assertIn('📚 Учёба', self.edit.call_args.kwargs['text'])
+        self.assertIn('Просто напиши', self.edit.call_args.kwargs['text'])
         self.assertEqual(self.edit.call_args.kwargs['reply_markup'].inline_keyboard[0][0].text, '📅 Дедлайны')
         self.assertEqual(self.answer.call_args.kwargs['text'], telegram_bot.text('lang_set', 'ru'))
 
@@ -279,9 +279,12 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.app.user_data[-100]['lang'] = 'kk'
         await self.update('/help')
         body = self.send.call_args.kwargs['text']
-        self.assertIn('Әңгіме және аккаунттар', body)
-        for name in ['reset', 'cancel', 'unlink', 'unlink_moodle']:
+        for name in ['start', 'account', 'lang', 'help']:
             self.assertIn('/' + name + ' —', body)
+        for old in ['/reset', '/unlink', '/grade', '/deadline']:
+            self.assertNotIn(old, body)
+        keyboard = self.send.call_args.kwargs['reply_markup'].inline_keyboard
+        self.assertEqual(keyboard[-1][0].callback_data, 'menu:reset')
         for action in ['grade', 'deadline']:
             await self.update(callback='menu:' + action, user_id=-100, chat_type='group')
             self.assertNotIn('login_flow', self.app.user_data[-100])
@@ -318,8 +321,49 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.ai.await_count, 4)
         for lang in ['kk', 'ru', 'en']:
             names = [name for name, _ in telegram_bot.COMMAND_LABELS[lang]]
-            self.assertTrue({'grade', 'deadline', 'rooms', 'events', 'unlink', 'unlink_moodle'}.issubset(names))
-            self.assertEqual(len(names), len(set(names)))
+            self.assertEqual(names, ['start', 'account', 'lang', 'help'])
+
+    async def test_menu_has_four_commands_and_old_commands_still_work(self):
+        await telegram_bot._post_init(self.app)
+        self.assertEqual([c.command for c in self.set_commands.call_args.args[0]], ['start', 'account', 'lang', 'help'])
+        # Hidden aliases are not removed: typing them still works.
+        await self.update('/guide')
+        await self.update('/reset')
+        self.app.user_data[42]['history'] = ['old']
+        await self.update(callback='menu:reset')  # "🆕 New chat" under /help
+        self.assertEqual(self.app.user_data[42]['history'], [])
+        self.ai.assert_not_awaited()
+
+    async def test_reviewers_also_get_review_in_their_menu(self):
+        with patch.dict(os.environ, {'DOCUMENTS_REVIEWER_IDS': '777'}):
+            await telegram_bot._post_init(self.app)
+            staff = self.set_commands.call_args
+            self.assertEqual(staff.kwargs['scope'].chat_id, 777)
+            self.assertEqual([c.command for c in staff.args[0]], ['start', 'account', 'lang', 'review', 'help'])
+            self.assertNotIn('review', [c.command for c in telegram_bot.command_menu('en', 42)])
+
+    async def test_account_shows_both_accounts_and_unlinks_from_a_button(self):
+        await self.update('/account')
+        sent = self.send.call_args.kwargs
+        self.assertIn('Менің аккаунтым', sent['text'])
+        self.assertEqual([row[0].callback_data for row in sent['reply_markup'].inline_keyboard],
+                         ['account:login', 'menu:deadline'])
+        self.app.user_data[42]['portal'] = {'student_id': '240103149', 'cookies': {}}
+        self.app.user_data[42]['moodle'] = {'mode': 'token', 'token': 't'}
+        await self.update('/account')
+        sent = self.send.call_args.kwargs
+        self.assertIn('240103149', sent['text'])
+        self.assertEqual([row[0].callback_data for row in sent['reply_markup'].inline_keyboard],
+                         ['account:unlink', 'account:unlink_moodle'])
+        await self.update(callback='account:unlink')
+        await self.update(callback='account:unlink_moodle')
+        self.assertNotIn('portal', self.app.user_data[42])
+        self.assertNotIn('moodle', self.app.user_data[42])
+        await self.update(callback='account:login')
+        self.assertEqual(self.app.user_data[42]['login_flow'], 'login')
+        await self.update('/account', user_id=-100, chat_type='group')
+        self.assertIn('private chat', self.send.call_args.kwargs['text'])
+        self.ai.assert_not_awaited()
 
     async def test_portal_command_replaces_moodle_login(self):
         await self.update('/deadline')

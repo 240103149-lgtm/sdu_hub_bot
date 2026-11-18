@@ -28,7 +28,7 @@ import core
 import i18n
 import rooms
 from rooms import CAMPUS_TZ
-from telegram_bot import add_command, reply, retry_keyboard, user_lang
+from telegram_bot import reply, retry_keyboard, user_lang
 
 EVENTS_FILE = core.KNOWLEDGE_DIR / "campus_events.md"
 TEXTS = i18n.by_lang("events")  # locales/<lang>.json, section "events"
@@ -296,9 +296,6 @@ async def on_event_details(update, context):
 
 
 def register_events(app):
-    add_command("events",
-        {lang: texts["menu"] for lang, texts in TEXTS.items()},
-        {lang: texts["help_line"] for lang, texts in TEXTS.items()})
     app.add_handler(CommandHandler("events", cmd_events))
     app.add_handler(CallbackQueryHandler(on_event_details, pattern=r"^ev:\d+$"))
     app.add_handler(CallbackQueryHandler(on_events_retry, pattern=r"^events:retry"))

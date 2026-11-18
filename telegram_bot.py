@@ -74,26 +74,34 @@ LANG_BUTTONS = [("kk", "🇰🇿 Қазақша"), ("ru", "🇷🇺 Русски
 # All texts are in locales/<lang>.json (US6); only the order of menus is set here.
 BOT: dict[str, dict[str, str]] = i18n.by_lang("bot")
 
-COMMAND_ORDER = ("start", "guide", "lang", "reset", "help")
+# The Telegram "/" menu shows only these four. Every feature is reached by
+# asking in plain words (the AI assistant) or from the /start buttons, so a
+# new feature adds an assistant tool and maybe a button, not a command.
+# The older commands (/grade, /deadline, /rooms, /events, /documents,
+# /guide, /login, /reset, /unlink, /unlink_moodle, /cancel) keep working
+# for students who type them; they are just not listed.
+COMMAND_ORDER = ("start", "account", "lang", "help")
 COMMAND_LABELS: dict[str, list[tuple[str, str]]] = {
     lang: [(name, labels[name]) for name in COMMAND_ORDER]
     for lang, labels in i18n.by_lang("commands").items()
 }
+REVIEW_LABEL: dict[str, str] = {lang: labels["review"] for lang, labels in i18n.by_lang("commands").items()}
 
 
 def text(key: str, lang: str) -> str:
     return BOT[core.normalize_lang(lang)][key]
 
 
-def add_command(name: str, menu: dict[str, str], help_line: dict[str, str]) -> None:
-    """Register a feature in all languages without duplicating menu entries."""
-    for lang in core.LANGS:
-        labels = COMMAND_LABELS[lang]
-        if not any(existing == name for existing, _ in labels):
-            position = next((i for i, (n, _) in enumerate(labels) if n == "lang"), len(labels))
-            labels.insert(position, (name, menu[lang]))
-        if f"/{name} " not in BOT[lang]["help"]:
-            BOT[lang]["help"] = BOT[lang]["help"].replace("/lang", f"{help_line[lang]}\n/lang", 1)
+def command_menu(lang: str, user_id: int | None = None) -> list[BotCommand]:
+    """The "/" menu for one chat: the four commands, plus /review for the
+    admissions staff (DOCUMENTS_REVIEWER_IDS)."""
+    from documents_bot import reviewer_ids
+
+    lang = core.normalize_lang(lang)
+    commands = [BotCommand(name, label) for name, label in COMMAND_LABELS[lang]]
+    if user_id is not None and user_id in reviewer_ids():
+        commands.insert(-1, BotCommand("review", REVIEW_LABEL[lang]))
+    return commands
 
 
 # --------------------------------------------------------- text helpers ----
@@ -245,7 +253,7 @@ HOME_BUTTONS = {
 }
 # grade, deadline and documents are entry points of the sign-in conversation
 # in accounts_bot, so their buttons are handled there, not by on_menu.
-MENU_PATTERN = r"^menu:(start|help|events|rooms|guide|lang)$"
+MENU_PATTERN = r"^menu:(start|help|events|rooms|guide|lang|reset)$"
 
 
 def home_keyboard(lang: str) -> InlineKeyboardMarkup:
@@ -253,6 +261,13 @@ def home_keyboard(lang: str) -> InlineKeyboardMarkup:
     buttons = [InlineKeyboardButton(label, callback_data=f"menu:{action}")
                for action, label in HOME_BUTTONS[core.normalize_lang(lang)]]
     return InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
+
+
+def help_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """The main menu plus "New chat", which replaces the old /reset."""
+    rows = list(home_keyboard(lang).inline_keyboard)
+    rows.append([InlineKeyboardButton(text("btn_new_chat", lang), callback_data="menu:reset")])
+    return InlineKeyboardMarkup(rows)
 
 
 def language_keyboard() -> InlineKeyboardMarkup:
@@ -335,7 +350,7 @@ async def edit_or_reply(update: Update, source: str, reply_markup: Any = None) -
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = user_lang(update, context)
-    await reply(update.effective_message, text("help", lang), reply_markup=home_keyboard(lang))
+    await reply(update.effective_message, text("help", lang), reply_markup=help_keyboard(lang))
 
 
 async def cmd_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -351,7 +366,7 @@ async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # "Language switched" is a short pop-up, not one more message in the chat.
     await query.answer(text("lang_set", chosen))
     if update.effective_chat.type == "private":
-        commands = [BotCommand(name, label) for name, label in COMMAND_LABELS[chosen]]
+        commands = command_menu(chosen, update.effective_user.id)
         try:
             await context.bot.set_my_commands(
                 commands, scope=BotCommandScopeChat(chat_id=update.effective_chat.id)
@@ -405,6 +420,7 @@ async def on_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     handlers = {
         "start": cmd_start, "help": cmd_help, "guide": cmd_guide,
         "lang": cmd_lang, "events": cmd_events, "rooms": cmd_rooms,
+        "reset": cmd_reset,
     }
     # A button should open rooms for now even if an earlier command had args.
     context.args = []
@@ -435,8 +451,18 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _post_init(app: Application) -> None:
     """English default menu; explicit language choices get a private-chat menu."""
-    default = [BotCommand(name, label) for name, label in COMMAND_LABELS["en"]]
-    await app.bot.set_my_commands(default)
+    await app.bot.set_my_commands(command_menu("en"))
+    from documents_bot import reviewer_ids
+
+    for reviewer in sorted(reviewer_ids()):
+        # Staff also see /review. A reviewer who never opened the bot cannot
+        # get a chat menu yet; the command still works when typed.
+        try:
+            await app.bot.set_my_commands(
+                command_menu("en", reviewer), scope=BotCommandScopeChat(chat_id=reviewer)
+            )
+        except TelegramError as exc:
+            print(f"[bot] could not set the /review menu for {reviewer}: {exc}")
     for lang in ("kk", "ru"):
         # Remove old locale-based menus so Telegram locale does not override English.
         await app.bot.delete_my_commands(language_code=lang)
