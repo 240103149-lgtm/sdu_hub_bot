@@ -16,6 +16,7 @@ from __future__ import annotations
 from functools import wraps
 import time
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 
 import deadline_bot as deadline
@@ -144,6 +145,44 @@ def menu_entry(feature, callback):
     return run
 
 
+def account_keyboard(context, lang):
+    """Sign in, link Moodle or unlink: one button per account."""
+    t = lambda key: A[key][lang]
+    portal = login._student_id(context)
+    moodle = (context.user_data or {}).get("moodle")
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t("btn_unlink_portal") if portal else t("btn_signin_portal"),
+                              callback_data="account:unlink" if portal else "account:login")],
+        [InlineKeyboardButton(t("btn_unlink_moodle") if moodle else t("btn_link_moodle"),
+                              callback_data="account:unlink_moodle" if moodle else "menu:deadline")],
+    ])
+
+
+async def cmd_account(update, context):
+    """/account: one place for both accounts (replaces /login, /unlink and
+    /unlink_moodle in the menu; those commands still work)."""
+    if update.effective_chat.type != "private":
+        await private_only(update, context)
+        return
+    lang = bot.user_lang(update, context)
+    portal = login._student_id(context)
+    moodle = (context.user_data or {}).get("moodle")
+    lines = [
+        A["account_title"][lang],
+        A["account_portal_on"][lang].format(id=portal) if portal else A["account_portal_off"][lang],
+        A["account_moodle_on"][lang] if moodle else A["account_moodle_off"][lang],
+    ]
+    await bot.reply(update.effective_message, "\n".join(lines), reply_markup=account_keyboard(context, lang))
+
+
+def account_button(callback):
+    """An /account button that runs a plain command handler."""
+    async def run(update, context):
+        await update.callback_query.answer()
+        await callback(update, context)
+    return run
+
+
 def register_accounts(app):
     from events_bot import cmd_events
     from rooms_bot import cmd_rooms
@@ -155,13 +194,14 @@ def register_accounts(app):
         "reset": bot.cmd_reset, "guide": bot.cmd_guide,
         "rooms": cmd_rooms, "room": cmd_rooms, "events": cmd_events,
         "unlink": grade.cmd_unlink, "unlink_moodle": deadline.cmd_unlink_moodle,
-        "review": docs.cmd_review,
+        "review": docs.cmd_review, "account": cmd_account,
     }
     app.add_handler(ConversationHandler(
         entry_points=[
             CallbackQueryHandler(menu_entry("grade", grade.cmd_grade), pattern=r"^menu:grade$"),
             CallbackQueryHandler(menu_entry("deadline", deadline.cmd_deadline), pattern=r"^menu:deadline$"),
             CallbackQueryHandler(menu_entry("documents", docs.cmd_documents), pattern=r"^menu:documents$"),
+            CallbackQueryHandler(menu_entry("login", login.cmd_login), pattern=r"^account:login$"),
             CallbackQueryHandler(menu_entry("assistant_portal", assistant_portal), pattern=r"^auth:portal$"),
             CallbackQueryHandler(menu_entry("assistant_moodle", assistant_moodle), pattern=r"^auth:moodle$"),
             CommandHandler("grade", entry("grade", grade.cmd_grade), filters=private),
@@ -192,6 +232,8 @@ def register_accounts(app):
             CommandHandler("cancel", cancel),
             CallbackQueryHandler(leave(bot.on_menu), pattern=bot.MENU_PATTERN),
             CallbackQueryHandler(leave(bot.on_lang_chosen), pattern=r"^lang:"),
+            CallbackQueryHandler(leave(account_button(grade.cmd_unlink)), pattern=r"^account:unlink$"),
+            CallbackQueryHandler(leave(account_button(deadline.cmd_unlink_moodle)), pattern=r"^account:unlink_moodle$"),
         ] + [
             CommandHandler(name, leave(callback)) for name, callback in commands.items()
         ] + [MessageHandler(filters.COMMAND, cancel)],
@@ -201,6 +243,6 @@ def register_accounts(app):
     deadline.register_deadline(app)
     app.add_handler(CommandHandler(["grade", "deadline", "deadlines", "documents", "login"], private_only, filters=~private))
     app.add_handler(CommandHandler("cancel", cancel))
-    for name in ("unlink", "unlink_moodle", "cancel"):
-        bot.add_command(name, A[f"{name}_menu"], A[f"{name}_help"])
-    bot.add_command("login", login.T["menu"], login.T["help_line"])
+    app.add_handler(CommandHandler("account", cmd_account))
+    app.add_handler(CallbackQueryHandler(account_button(grade.cmd_unlink), pattern=r"^account:unlink$"))
+    app.add_handler(CallbackQueryHandler(account_button(deadline.cmd_unlink_moodle), pattern=r"^account:unlink_moodle$"))

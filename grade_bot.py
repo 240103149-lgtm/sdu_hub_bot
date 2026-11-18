@@ -46,7 +46,7 @@ import grade
 import i18n
 import login_guard
 from grade import PortalError
-from telegram_bot import BOT, COMMAND_LABELS, keep_typing, retry_keyboard, user_lang
+from telegram_bot import keep_typing, retry_keyboard, user_lang
 
 CHOOSE, ASK_ID, ASK_PASSWORD, ASK_CODE = range(4)
 
@@ -57,8 +57,6 @@ PENDING_TTL = 600  # seconds a half-finished sign-in may wait for the 2FA code
 
 G: dict[str, dict[str, str]] = i18n.by_key("grade")  # locales/<lang>.json, section "grade"
 
-MENU = {lang: ("grade", label) for lang, label in G["menu"].items()}
-HELP_LINE = G["help_line"]
 
 
 def t(key: str, lang: str) -> str:
@@ -566,14 +564,6 @@ async def on_grade_nav(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 def register_grade(app: Application) -> None:
     """Add /grade and /unlink to the bot. Call it BEFORE the generic text
     handler is added, so the sign-in steps get the student's messages first."""
-    for lang, (name, label) in MENU.items():
-        labels = COMMAND_LABELS[lang]
-        if not any(existing == name for existing, _ in labels):
-            labels.insert(2, (name, label))  # right after /start and /guide
-        help_text = BOT[lang]["help"]
-        if "/grade" not in help_text:
-            BOT[lang]["help"] = help_text.replace("/lang", f"{HELP_LINE[lang]}\n/lang", 1)
-
     app.add_handler(CallbackQueryHandler(on_grade_nav, pattern=r"^gr:(now|retry|\d+)$"))
     app.add_handler(CallbackQueryHandler(on_stale_change_id, pattern=r"^grade:newid$"))
     app.add_handler(CommandHandler("unlink", cmd_unlink))

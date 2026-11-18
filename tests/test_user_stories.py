@@ -550,7 +550,7 @@ class US7AuthenticationTests(BotHarness):
             await self.text('secret-password')
         self.assertEqual(self.last_text(),
                          '✅ Signed in as 240103149. Your personal features, such as grades and documents, '
-                         'are now available. Sign out: /unlink')
+                         'are now available. Sign out: /account')
         menu = [data for row in self.last_buttons() for _, data in row]
         self.assertIn('menu:grade', menu)
         self.assertIn('menu:documents', menu)
@@ -560,13 +560,13 @@ class US7AuthenticationTests(BotHarness):
         self.assertTrue(self.delete.await_count >= 1)  # the password message was deleted
 
         await self.text('/login')
-        self.assertEqual(self.last_text(), "You're already signed in as 240103149. Sign out: /unlink")
+        self.assertEqual(self.last_text(), "You're already signed in as 240103149. Sign out: /account")
         self.ai.assert_not_awaited()
 
     async def test_login_cancel_wrong_password_hint_and_group_chat(self):
         await self.text('/login')
         await self.tap('login:cancel')
-        self.assertEqual(self.last_edit(), 'Sign-in cancelled. Send /login to start again.')
+        self.assertEqual(self.last_edit(), 'Sign-in cancelled. Send /account to start again.')
         self.assertNotIn('login_flow', self.app.user_data[42])
         FakePortal.password_ok = False
         await self.sign_in(command='/login')
@@ -574,8 +574,8 @@ class US7AuthenticationTests(BotHarness):
         await self.text('/login', user_id=-100, chat_type='group')
         self.assertIn('private chat', self.last_text())
         names = [name for name, _ in telegram_bot.COMMAND_LABELS['en']]
-        self.assertIn('login', names)
-        self.assertIn('/login — sign in with your university ID', telegram_bot.text('start', 'en'))
+        self.assertIn('account', names)  # /login still works, /account is the one listed
+        self.assertIn('/account — sign in or unlink your accounts', telegram_bot.text('start', 'en'))
 
     async def test_moodle_sign_in_is_protected_too(self):
         import moodle

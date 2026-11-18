@@ -45,7 +45,7 @@ import i18n
 import login_guard
 import moodle
 from moodle import MoodleError
-from telegram_bot import BOT, COMMAND_LABELS, keep_typing, user_lang, tg_len
+from telegram_bot import keep_typing, user_lang, tg_len
 
 CHOOSE, ASK_USER, ASK_PASS = range(10, 13)
 
@@ -60,8 +60,6 @@ UNITS = {lang: tuple(units) for lang, units in D["units"].items()}
 WEEKDAYS = D["weekdays"]
 MONTHS = D["months"]
 
-MENU = {lang: ("deadline", label) for lang, label in D["menu"].items()}
-HELP_LINE = D["help_line"]
 
 
 def t(key: str, lang: str) -> str:
@@ -371,14 +369,5 @@ async def cmd_unlink_moodle(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 def register_deadline(app: Application) -> None:
     """Add /deadline and /unlink_moodle to the bot. Call it BEFORE the generic
     text handler is added (right after register_grade)."""
-    for lang, (name, label) in MENU.items():
-        labels = COMMAND_LABELS[lang]
-        if not any(existing == name for existing, _ in labels):
-            after_grade = next((i + 1 for i, (n, _) in enumerate(labels) if n == "grade"), 2)
-            labels.insert(after_grade, (name, label))
-        help_text = BOT[lang]["help"]
-        if "/deadline" not in help_text:
-            BOT[lang]["help"] = help_text.replace("/lang", f"{HELP_LINE[lang]}\n/lang", 1)
-
     app.add_handler(CallbackQueryHandler(on_stale_change_user, pattern=r"^deadline:newuser$"))
     app.add_handler(CommandHandler("unlink_moodle", cmd_unlink_moodle))

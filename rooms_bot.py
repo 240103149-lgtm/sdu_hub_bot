@@ -24,14 +24,12 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 import core
 import i18n
 import rooms
-from telegram_bot import add_command, render_chunks, retry_keyboard, user_lang
+from telegram_bot import render_chunks, retry_keyboard, user_lang
 
 # ------------------------------------------------------------------ texts ----
 
 R: dict[str, dict[str, str]] = i18n.by_key("rooms")  # locales/<lang>.json, section "rooms"
 
-MENU = R["menu"]
-HELP_LINE = R["help_line"]
 
 # Schedule day code -> (short name for the day buttons, full name for the heading).
 DAY_NAMES: dict[str, dict[str, tuple[str, str]]] = {
@@ -255,7 +253,6 @@ async def on_search_retry(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 def register_rooms(app: Application) -> None:
     """Add /rooms and its buttons to the bot."""
-    add_command("rooms", MENU, HELP_LINE)
     app.add_handler(CommandHandler(["rooms", "room"], cmd_rooms))
     app.add_handler(CallbackQueryHandler(on_rooms_chosen, pattern=r"^rooms:"))
     app.add_handler(CallbackQueryHandler(on_search_retry, pattern=r"^roomsq:"))

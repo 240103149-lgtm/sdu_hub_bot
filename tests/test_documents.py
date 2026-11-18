@@ -629,10 +629,9 @@ class FlowTests(unittest.IsolatedAsyncioTestCase):
         await self.text('/cancel')
         self.assertIn('Send /documents', self.last_text())
         self.assertNotIn('login_flow', self.app.user_data[42])
-        names = [name for name, _ in telegram_bot.COMMAND_LABELS['en']]
-        self.assertIn('documents', names)
-        self.assertEqual(len(names), len(set(names)))
-        self.assertIn('/documents', telegram_bot.text('help', 'kk'))
+        # /documents is no longer in the "/" menu, but the 📄 button and the help keep it.
+        self.assertNotIn('documents', [name for name, _ in telegram_bot.COMMAND_LABELS['en']])
+        self.assertIn('documents', [action for action, _ in telegram_bot.HOME_BUTTONS['kk']])
         self.ai.assert_not_awaited()
 
 
