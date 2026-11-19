@@ -141,7 +141,7 @@ TOOLS: tuple[Tool, ...] = (
                 "properties": {
                     "name": {"type": "string", "description": "The item's English name exactly as in the "
                              "Item column of the canteen menu in the knowledge base, e.g. 'Chicken shawarma', "
-                             "'Ayran', 'Combo 2: chicken doner + cola 0.5 L + fries', 'Chicken pide (Belka Food)', "
+                             "'Ayran', 'Combo 2: chicken doner + cola 0.5 L + fries', 'Chicken pide', "
                              "'Coca-Cola 1 L'. The two counters have different prices: pick the row of the counter "
                              "the student means. Turn the student's words in any language into that name."},
                     "quantity": {"type": "integer", "description": "How many; 1 if not said."},

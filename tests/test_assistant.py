@@ -665,7 +665,8 @@ class CanteenTests(unittest.TestCase):
             cards = canteen.render_places(lang)
             self.assertEqual(len(cards), 2)  # one message per counter
             self.assertTrue(all(len(telegram_bot.render_chunks(card)) == 1 for card in cards))
-        self.assertIn('• Тауықпен пиде — **1 590 ₸**', canteen.render_places('kk')[1])  # no "(Belka Food)" under its heading
+        self.assertIn('• Тауықпен пиде — **1 590 ₸**', canteen.render_places('kk')[1])
+        self.assertNotIn('Тауық етімен пиде', canteen.render_places('kk')[0])  # the large pide is only at Belka Food
         self.assertIn('• Сиыр етімен шаурма + Coca-Cola — **1 690 ₸**', canteen.render('kk'))
 
 
@@ -697,7 +698,8 @@ class CanteenOrderTests(unittest.TestCase):
 
     def test_the_two_counters_are_never_mixed_up_in_a_bill(self):
         import canteen
-        order = canteen.order_total([{'name': 'Chicken pide'}, {'name': 'Chicken pide (Belka Food)'},
-                                     {'name': 'Pizza Pepperoni'}, {'name': 'Coca-Cola 1 L'}])
-        self.assertEqual([line.price for line in order.lines], [1390, 1590, 3290, 690])
-        self.assertEqual(order.total, 6960)
+        order = canteen.order_total([{'name': 'Small pide'}, {'name': 'Chicken pide'},
+                                     {'name': 'Pizza Pepperoni'}, {'name': 'Coca-Cola 1 L'},
+                                     {'name': 'Coca-Cola or another soft drink, 0.5 L'}])
+        self.assertEqual([line.price for line in order.lines], [460, 1590, 3290, 690, 450])
+        self.assertEqual(order.total, 6480)

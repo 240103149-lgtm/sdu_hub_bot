@@ -1,6 +1,6 @@
 # SDU canteen (асхана, столовая, кантин): menu and prices
 
-Source: photos of the canteen's price boards and price tags taken by the SDU Hub team on 19.11.2026; MacCoffee, MacTea, ayran, soft drinks, the large pide and the extras were given by the team the same day. There is no official web page for these prices, so do not add a source link.
+Source: photos of the canteen's price boards and price tags taken by the SDU Hub team on 19.11.2026; MacCoffee, MacTea, ayran, soft drinks and the extras were given by the team the same day. There is no official web page for these prices, so do not add a source link.
 
 Prices are in tenge (₸). The canteen has two counters with their own menus and prices ("## Place:" below). It may also sell things that are not in this list, and prices can change.
 
@@ -28,9 +28,6 @@ Belka Food: photos of its menu screens taken by the SDU Hub team on 19.11.2026.
 | Mixed shawarma + Coca-Cola | Ассорти шаурма + Coca-Cola | Шаурма ассорти + Coca-Cola | 1 690 ₸ |
 | Chicken kapsalon | Тауық етімен капсалон | Капсалон с курицей | 1 790 ₸ |
 | Beef kapsalon | Сиыр етімен капсалон | Капсалон с говядиной | 1 890 ₸ |
-| Chicken pide | Тауық етімен пиде | Пиде с курицей | 1 390 ₸ |
-| Beef pide | Сиыр етімен пиде | Пиде с говядиной | 1 490 ₸ |
-| Minced meat pide | Фаршпен пиде | Пиде с фаршем | 1 490 ₸ |
 | Khychin with cheese | Ірімшікті хычин | Хычины с сыром | 1 490 ₸ |
 | Corn hot dog | Жүгерілі хот-дог | Хот-дог кукурузный | 1 100 ₸ |
 | Chicken sandwich | Тауық етімен сэндвич | Сэндвич с курицей | 690 ₸ |
@@ -99,21 +96,21 @@ Belka Food: photos of its menu screens taken by the SDU Hub team on 19.11.2026.
 ### Pide | Пиде | Пиде
 | Item | Қазақша | Русский | Price |
 | :---- | :---- | :---- | :---- |
-| Sausage pide (Belka Food) | Шұжықпен пиде (Belka Food) | Пиде с колбасой (Belka Food) | 1 590 ₸ |
-| Chicken pide (Belka Food) | Тауықпен пиде (Belka Food) | Пиде с курицей (Belka Food) | 1 590 ₸ |
-| Beef pide (Belka Food) | Етпен пиде (Belka Food) | Пиде с говядиной (Belka Food) | 1 690 ₸ |
-| Cheese pide (Belka Food) | Ірімшікпен пиде (Belka Food) | Пиде с сыром (Belka Food) | 1 490 ₸ |
-| Minced beef pide (Belka Food) | Фаршпен пиде (Belka Food) | Пиде с фаршем (Belka Food) | 1 690 ₸ |
-| Egg pide (Belka Food) | Жұмыртқамен пиде (Belka Food) | Пиде с яйцом (Belka Food) | 1 490 ₸ |
+| Sausage pide | Шұжықпен пиде | Пиде с колбасой | 1 590 ₸ |
+| Chicken pide | Тауықпен пиде | Пиде с курицей | 1 590 ₸ |
+| Beef pide | Етпен пиде | Пиде с говядиной | 1 690 ₸ |
+| Cheese pide | Ірімшікпен пиде | Пиде с сыром | 1 490 ₸ |
+| Minced beef pide | Фаршпен пиде | Пиде с фаршем | 1 690 ₸ |
+| Egg pide | Жұмыртқамен пиде | Пиде с яйцом | 1 490 ₸ |
 
 ### Doner | Донер | Донер
 | Item | Қазақша | Русский | Price |
 | :---- | :---- | :---- | :---- |
 | Mixed doner | Ассорти донер | Донер ассорти | 1 990 ₸ |
 | Mixed doner sandwich (baton) | Ассорти батон донер | Батон-донер ассорти | 2 090 ₸ |
-| Chicken doner (Belka Food) | Тауық етімен донер (Belka Food) | Донер с курицей (Belka Food) | 1 890 ₸ |
+| Chicken doner | Тауық етімен донер | Донер с курицей | 1 890 ₸ |
 | Chicken doner sandwich (baton) | Тауық етімен батон донер | Батон-донер с курицей | 1 990 ₸ |
-| Beef doner (Belka Food) | Сиыр етімен донер (Belka Food) | Донер с говядиной (Belka Food) | 1 990 ₸ |
+| Beef doner | Сиыр етімен донер | Донер с говядиной | 1 990 ₸ |
 | Beef doner sandwich (baton) | Сиыр етімен батон донер | Батон-донер с говядиной | 2 090 ₸ |
 
 ### Burgers, hot dogs, toasts | Бургер, хот-дог, тост | Бургеры, хот-доги, тосты
@@ -181,6 +178,6 @@ How to answer:
 - The Super Combo price (4 790 ₸) is the total for the whole set, not a discount.
 - Tea and coffee ("шай", "чай", "кофе") are MacTea and MacCoffee, 150 ₸ each.
 - Soft drinks: at the canteen counter every 0.5 L soft drink like Coca-Cola costs 450 ₸; Belka Food has its own drink list with sizes (for example Coca-Cola 0.5 L 520 ₸).
-- The two counters have different prices for similar dishes (pide, doner, drinks). If it is not clear which counter the student means, give both prices and say where each is.
-- Pide: at the canteen counter the large pide is 1 390–1 490 ₸ and the small one 460 ₸; Belka Food's pide is 1 490–1 690 ₸.
+- The two counters have different prices for similar dishes (doner, drinks). If it is not clear which counter the student means, give both prices and say where each is.
+- Pide: the large pide (with sausage, chicken, beef, cheese, minced beef or egg, 1 490–1 690 ₸) is sold at Belka Food; the canteen counter has only the small pide, 460 ₸.
 - For a dish or drink that is not in this list, say that the bot's canteen list does not have it yet. Do not invent a price.
