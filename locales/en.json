@@ -386,7 +386,7 @@
   },
   "canteen": {
     "title": "🍽 SDU canteen: prices",
-    "note": "ℹ️ The list is not complete yet: more dishes and what each combo contains will be added later.",
+    "note": "ℹ️ Prices from the canteen's price tags, 19.11.2026. Some items may be missing, and prices can change.",
     "missing": "The canteen menu has not been added yet."
   }
 }
