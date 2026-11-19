@@ -464,7 +464,8 @@ async def on_keyboard_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if action == "canteen":
         import canteen
 
-        await reply(update.effective_message, canteen.render(user_lang(update, context)))
+        for card in canteen.render_places(user_lang(update, context)):  # one message per counter
+            await reply(update.effective_message, card)
         return
     handlers = {"rooms": cmd_rooms, "events": cmd_events, "guide": cmd_guide, "account": cmd_account}
     if action in handlers:

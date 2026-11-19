@@ -20,44 +20,80 @@ TEXTS = i18n.by_lang("canteen")  # locales/<lang>.json, section "canteen"
 COLUMN = {"en": 0, "kk": 1, "ru": 2}
 
 
-def load_menu() -> list[tuple[tuple[str, str, str], list[tuple[str, ...]]]] | None:
-    """[(section names (en, kk, ru), rows (en, kk, ru, price))]; None when the
-    file is missing or unreadable. A section starts with "## English | Қазақша | Русский"."""
+Names = tuple[str, str, str]  # en, kk, ru
+
+
+def _names(heading: str) -> Names:
+    parts = [part.strip() for part in heading.split("|")]
+    return tuple((parts * 3)[:3])
+
+
+def load_places() -> list[tuple[Names, list[tuple[Names, list[tuple[str, ...]]]]]] | None:
+    """[(place names, [(section names, rows (en, kk, ru, price))])]; None when
+    the file is missing or unreadable. "## Place: English | Қазақша | Русский"
+    starts a counter, "### English | Қазақша | Русский" a section in it."""
     try:
         source = MENU_FILE.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
-    sections: list = []
+    places: list = []
     for line in source.splitlines():
         line = line.strip()
-        if line.startswith("## "):
-            names = [part.strip() for part in line[3:].split("|")]
-            sections.append((tuple((names * 3)[:3]), []))
+        if line.startswith("## Place:"):
+            places.append((_names(line[len("## Place:"):]), []))
+            continue
+        if line.startswith("### "):
+            if not places:
+                places.append((("", "", ""), []))
+            places[-1][1].append((_names(line[4:]), []))
             continue
         cells = [cell.strip() for cell in line.strip("|").split("|")]
         if not line.startswith("|") or len(cells) != 4 or cells[0] == "Item" or cells[0].startswith(":"):
             continue
-        if not sections:
-            sections.append((("", "", ""), []))
-        sections[-1][1].append(tuple(cells))
-    return [section for section in sections if section[1]]
+        if not places:
+            places.append((("", "", ""), []))
+        if not places[-1][1]:
+            places[-1][1].append((("", "", ""), []))
+        places[-1][1][-1][1].append(tuple(cells))
+    places = [(names, [sec for sec in sections if sec[1]]) for names, sections in places]
+    return [place for place in places if place[1]]
+
+
+def load_menu() -> list[tuple[Names, list[tuple[str, ...]]]] | None:
+    """Every section of every counter, in order."""
+    places = load_places()
+    if places is None:
+        return None
+    return [section for _, sections in places for section in sections]
+
+
+def render_places(lang: str) -> list[str]:
+    """One card per counter (each fits in one Telegram message)."""
+    lang = core.normalize_lang(lang)
+    labels = TEXTS[lang]
+    places = load_places()
+    if not places:
+        return [labels["missing"]]
+    column = COLUMN[lang]
+    cards = []
+    for place, sections in places:
+        lines = [f"**{labels['title']}**"]
+        if place[column]:
+            lines.append(f"📍 **{place[column]}**")
+        # "(Belka Food)" keeps names unique for the AI; under its own heading it is not needed.
+        brand = f" ({place[0].split(' (')[0]})" if place[0] else None
+        for names, rows in sections:
+            lines.append("")
+            if names[column]:
+                lines.append(f"**{names[column]}**")
+            lines += [f"• {row[column].replace(brand, '') if brand else row[column]} — **{row[3]}**" for row in rows]
+        cards.append("\n".join(lines))
+    cards[-1] += "\n\n" + labels["note"]
+    return cards
 
 
 def render(lang: str) -> str:
-    lang = core.normalize_lang(lang)
-    labels = TEXTS[lang]
-    menu = load_menu()
-    if not menu:
-        return labels["missing"]
-    column = COLUMN[lang]
-    lines = [f"**{labels['title']}**"]
-    for names, rows in menu:
-        lines.append("")
-        if names[column]:
-            lines.append(f"**{names[column]}**")
-        lines += [f"• {row[column]} — **{row[3]}**" for row in rows]
-    lines += ["", labels["note"]]
-    return "\n".join(lines)
+    return "\n\n".join(render_places(lang))
 
 
 # ------------------------------------------------------------ an order ----

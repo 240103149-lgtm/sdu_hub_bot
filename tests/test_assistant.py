@@ -653,12 +653,19 @@ class CanteenTests(unittest.TestCase):
     def test_canteen_card_has_every_section_and_fits_one_message(self):
         import canteen
         import telegram_bot
-        menu = canteen.load_menu()
-        self.assertEqual([names[0] for names, _ in menu], ['Combos', 'Hot food', 'Baked goods', 'Desserts', 'Drinks', 'Extras'])
-        self.assertTrue(all(row[3].endswith('₸') for _, rows in menu for row in rows))
+        places = canteen.load_places()
+        self.assertEqual([[names[0] for names, _ in sections] for _, sections in places], [
+            ['Combos', 'Hot food', 'Baked goods', 'Desserts', 'Drinks', 'Extras'],
+            ['Pizza', 'Pide', 'Doner', 'Burgers, hot dogs, toasts', 'Snacks', 'Combos', 'Drinks'],
+        ])
+        rows = [row for section in canteen.load_menu() for row in section[1]]
+        self.assertTrue(all(row[3].endswith('₸') for row in rows))
+        self.assertEqual(len({row[0] for row in rows}), len(rows))  # English names are unique: the bill can find them
         for lang in ['kk', 'ru', 'en']:
-            card = canteen.render(lang)
-            self.assertEqual(len(telegram_bot.render_chunks(card)), 1)
+            cards = canteen.render_places(lang)
+            self.assertEqual(len(cards), 2)  # one message per counter
+            self.assertTrue(all(len(telegram_bot.render_chunks(card)) == 1 for card in cards))
+        self.assertIn('• Тауықпен пиде — **1 590 ₸**', canteen.render_places('kk')[1])  # no "(Belka Food)" under its heading
         self.assertIn('• Сиыр етімен шаурма + Coca-Cola — **1 690 ₸**', canteen.render('kk'))
 
 
@@ -687,3 +694,10 @@ class CanteenOrderTests(unittest.TestCase):
         order = canteen.order_total([{'name': 'шаурма'}, {'name': 'Chicken shawarma', 'quantity': 999}])
         self.assertEqual(order.unknown, ['шаурма'])  # chicken, beef or mixed? not chosen by the code
         self.assertEqual(order.lines[0].quantity, canteen.MAX_QUANTITY)
+
+    def test_the_two_counters_are_never_mixed_up_in_a_bill(self):
+        import canteen
+        order = canteen.order_total([{'name': 'Chicken pide'}, {'name': 'Chicken pide (Belka Food)'},
+                                     {'name': 'Pizza Pepperoni'}, {'name': 'Coca-Cola 1 L'}])
+        self.assertEqual([line.price for line in order.lines], [1390, 1590, 3290, 690])
+        self.assertEqual(order.total, 6960)
