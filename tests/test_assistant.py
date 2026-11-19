@@ -638,7 +638,17 @@ class NoteTests(unittest.TestCase):
 class CanteenTests(unittest.TestCase):
     def test_canteen_prices_are_in_the_knowledge_base(self):
         prompt, _ = core.system_prompt('Асханада шай қанша тұрады?', 'kk')
-        for line in ['| Combo 1 | Комбо 1 | Комбо 1 | 1 690 ₸ |', '| Combo 2 | Комбо 2 | Комбо 2 | 3 290 ₸ |',
-                     '| Combo 3 | Комбо 3 | Комбо 3 | 5 190 ₸ |', '| Tea | Шай | Чай | 150 ₸ |']:
+        for line in ['| 1 990 ₸ |', '| Tea | Шай | Чай | 150 ₸ |', '| Corn hot dog | Жүгерілі хот-дог | Хот-дог кукурузный | 1 100 ₸ |']:
             self.assertIn(line, prompt)
-        self.assertIn('NOT complete yet', prompt)
+        self.assertIn('Do not invent a price', prompt)
+
+    def test_canteen_card_has_every_section_and_fits_one_message(self):
+        import canteen
+        import telegram_bot
+        menu = canteen.load_menu()
+        self.assertEqual([names[0] for names, _ in menu], ['Combos', 'Hot food', 'Baked goods', 'Desserts', 'Drinks'])
+        self.assertTrue(all(row[3].endswith('₸') for _, rows in menu for row in rows))
+        for lang in ['kk', 'ru', 'en']:
+            card = canteen.render(lang)
+            self.assertEqual(len(telegram_bot.render_chunks(card)), 1)
+        self.assertIn('• Сиыр етімен шаурма + Coca-Cola — **1 690 ₸**', canteen.render('kk'))
