@@ -237,7 +237,7 @@ def register_accounts(app):
             CommandHandler("cancel", cancel),
             CallbackQueryHandler(leave(bot.on_menu), pattern=bot.MENU_PATTERN),
             CallbackQueryHandler(leave(bot.on_lang_chosen), pattern=r"^lang:"),
-            MessageHandler(tapped("rooms", "events", "guide", "account", "help"), leave(bot.on_keyboard_button)),
+            MessageHandler(tapped("calendar", "rooms", "events", "guide", "account"), leave(bot.on_keyboard_button)),
             CallbackQueryHandler(leave(account_button(grade.cmd_unlink)), pattern=r"^account:unlink$"),
             CallbackQueryHandler(leave(account_button(deadline.cmd_unlink_moodle)), pattern=r"^account:unlink_moodle$"),
         ] + [

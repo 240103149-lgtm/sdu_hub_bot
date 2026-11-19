@@ -274,11 +274,11 @@ def home_keyboard(lang: str) -> InlineKeyboardMarkup:
 # The keyboard under the message field in private chats. A tap sends the
 # label as a message; the handlers below (and accounts_bot for the actions
 # that may need a sign-in) open the feature without the AI.
-KEYBOARD_ACTIONS = ("grade", "deadline", "rooms", "events", "guide", "documents", "account", "help")
+KEYBOARD_ACTIONS = ("grade", "deadline", "calendar", "rooms", "events", "guide", "documents", "account")
 KEYBOARD_LABELS: dict[str, dict[str, str]] = i18n.by_lang("keyboard")
 # Bump when KEYBOARD_ACTIONS or the labels change: chats then get the new
 # keyboard with their next answer.
-KEYBOARD_VERSION = 1
+KEYBOARD_VERSION = 2
 
 
 def reply_keyboard(lang: str) -> ReplyKeyboardMarkup:
@@ -449,9 +449,16 @@ async def on_keyboard_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
     from events_bot import cmd_events
     from rooms_bot import cmd_rooms
 
-    handlers = {"rooms": cmd_rooms, "events": cmd_events, "guide": cmd_guide,
-                "account": cmd_account, "help": cmd_help}
+    from assistant_bot import answer_question
+
     action = keyboard_action(update.effective_message.text)
+    if action == "calendar":
+        # The dates are answered in the student's language from the academic
+        # calendar (and the portal's System Calendar card when signed in).
+        lang = user_lang(update, context)
+        await answer_question(update, context, question=KEYBOARD_LABELS[lang]["calendar_question"])
+        return
+    handlers = {"rooms": cmd_rooms, "events": cmd_events, "guide": cmd_guide, "account": cmd_account}
     if action in handlers:
         context.args = []
         await handlers[action](update, context)
@@ -696,7 +703,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(on_lang_chosen, pattern=r"^lang:"))
     app.add_handler(CallbackQueryHandler(on_menu, pattern=MENU_PATTERN))
     app.add_handler(MessageHandler(
-        filters.ChatType.PRIVATE & filters.Text(keyboard_labels("rooms", "events", "guide", "account", "help")),
+        filters.ChatType.PRIVATE & filters.Text(keyboard_labels("calendar", "rooms", "events", "guide", "account")),
         on_keyboard_button,
     ))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_question))

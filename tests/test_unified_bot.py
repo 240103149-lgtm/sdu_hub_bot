@@ -373,6 +373,10 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         await self.update('👤 Аккаунт')
         self.assertIn('Менің аккаунтым', self.send.call_args.kwargs['text'])
         self.ai.assert_not_awaited()
+        await self.update('📆 Күнтізбе')  # the dates come from the AI, in the student's language
+        self.ai.assert_awaited_once()
+        self.assertEqual(self.ai.call_args.args[0], telegram_bot.KEYBOARD_LABELS['kk']['calendar_question'])
+        self.assertNotIn('help', telegram_bot.KEYBOARD_ACTIONS)
 
     async def test_bot_follows_the_language_the_student_writes_in(self):
         import assistant

@@ -380,6 +380,7 @@
     "guide": "📚 Schedule guide",
     "documents": "📄 Documents",
     "account": "👤 Account",
-    "help": "❓ Help"
+    "calendar": "📆 Calendar",
+    "calendar_question": "What are the main academic calendar dates of this semester?"
   }
 }
