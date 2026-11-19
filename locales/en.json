@@ -16,7 +16,7 @@
     "source_label": "Source:"
   },
   "bot": {
-    "start": "Hi, {name}! 👋\n\nI'm **SDU Hub**, your student-life assistant.\n\n💬 **Just write what you need**, for example:\n“What is my grade in discrete math?”\n“Is there a free room tomorrow at 14:00?”\n“When does withdrawal end?”\n\nOr choose a button below 👇\n\n/account — sign in or unlink your accounts\n/lang — Қазақша / Русский / English\n/help — help",
+    "start": "Hi, {name}! 👋\n\nI'm **SDU Hub**, your student-life assistant.\n\n💬 **Just write what you need**, for example:\n“What is my grade in discrete math?”\n“Is there a free room tomorrow at 14:00?”\n“When does withdrawal end?”\n\nOr use the buttons under the message field 👇\n\n/account — sign in or unlink your accounts\n/lang — Қазақша / Русский / English\n/help — help",
     "help": "**SDU Hub · Help**\n\n💬 You don't need commands: just ask in your own words. I can show:\n📊 your grades, also for one course\n📅 Moodle deadlines\n🚪 free rooms for a time you choose\n🎉 campus events\n📆 academic calendar dates\n📚 the course registration guide\n📄 enrollment documents\n\n**Commands**\n/start — main menu\n/account — sign in, link Moodle or unlink\n/lang — Қазақша / Русский / English\n/help — this help\n\nDuring a sign-in, /cancel stops it. “🆕 New chat” below clears the AI conversation.",
     "choose_lang": "Choose a language:",
     "lang_set": "Language switched to English. Go ahead and ask.",
@@ -25,7 +25,11 @@
     "btn_retry": "🔄 Retry",
     "not_text": "I only understand text for now. Please type your question.",
     "default_name": "student",
-    "btn_new_chat": "🆕 New chat"
+    "btn_new_chat": "🆕 New chat",
+    "guide_short": "📚 **How to create your schedule (course registration)**\n\n1. **Check the dates.** my.sdu.edu.kz → Information → System Calendar, row “Course Registration”. Your own window is in Individual Permissions.\n2. **Plan ahead.** My Curriculum shows your courses; agree on them with your advisor. You can save them in the Wish list.\n3. **Register.** When the window opens: Academic Operations → Course Registration. For each course choose the N (lecture) section, then its P and L sections, and press add.\n4. **Confirm.** Press the confirmation button: the status becomes STUDENT CONFIRMED, then APPROVED.\n5. **Limits.** 20–40 ECTS per semester, 30 recommended. A course without registration gives no credit.\n\nAfter registration you can still change courses in Add-Drop (the first week of classes), with paid late registration, or by withdrawal.\n\n📄 Every step, the timetable colors and the portal's messages are in the full guide: tap the button below.",
+    "btn_guide_file": "📄 Full guide (file)",
+    "guide_file_title": "SDU course registration guide",
+    "guide_file_caption": "📄 The full course registration guide (in English)."
   },
   "commands": {
     "start": "Start the bot",
@@ -230,7 +234,8 @@
     "missing": "Event information has not been published yet.",
     "source": "Details are shown in the published source language.",
     "menu": "Campus events",
-    "help_line": "/events — campus events"
+    "help_line": "/events — campus events",
+    "none_upcoming": "There are no upcoming campus events yet."
   },
   "documents": {
     "title": "Enrollment documents",
@@ -366,5 +371,15 @@
     "closed": "closed",
     "mine": "Your individual permissions",
     "empty": "The portal has not published the calendar for this term yet."
+  },
+  "keyboard": {
+    "grade": "📊 Grades",
+    "deadline": "📅 Deadlines",
+    "rooms": "🚪 Free rooms",
+    "events": "🎉 Events",
+    "guide": "📚 Schedule guide",
+    "documents": "📄 Documents",
+    "account": "👤 Account",
+    "help": "❓ Help"
   }
 }

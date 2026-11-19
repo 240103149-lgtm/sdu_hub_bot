@@ -53,4 +53,5 @@ This file is newer than SDU_01–SDU_03 (checked 19.09.2026): where they say med
 - Contacts: iro@sdu.edu.kz (international relations), ssc@sdu.edu.kz (study questions).
 
 ## Library
-Scientific Library: https://library.sdu.edu.kz/ , library@sdu.edu.kz. Loan limits, return dates and fines are not published on the website: say this information is not available and suggest asking the library.
+Scientific Library: https://library.sdu.edu.kz/ , library@sdu.edu.kz.
+Opening hours: weekdays 08:30–17:30 (given by the SDU Hub team, November 2026; not on the website). Loan limits, return dates and fines are not published on the website: say this information is not available and suggest asking the library.

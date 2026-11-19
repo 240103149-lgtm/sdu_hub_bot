@@ -172,7 +172,13 @@ class US2GuideRenderingTests(unittest.TestCase):
 class US2GuideFlowTests(BotHarness):
     async def test_guide_has_the_portal_button(self):
         await self.text('/guide')
-        self.assertIn(('🔗 Open the registration portal', 'https://my.sdu.edu.kz/'), self.last_buttons()[0])
+        self.assertIn('How to create your schedule', self.last_text())
+        self.assertEqual(self.last_buttons(), [[('📄 Full guide (file)', 'guide:file')],
+                                               [('🔗 Open the registration portal', 'https://my.sdu.edu.kz/')]])
+        await self.tap('guide:file')  # the full guide as a Word file
+        sent = self.app.bot.send_document.call_args.kwargs
+        self.assertEqual(sent['filename'], 'SDU_course_registration_guide.docx')
+        self.assertTrue(sent['document'].getvalue().startswith(b'PK'))  # a .docx is a zip file
 
     async def test_not_published_guide_is_never_replaced_by_another(self):
         with patch.object(core, 'load_guide', return_value=None):
@@ -186,7 +192,7 @@ class US2GuideFlowTests(BotHarness):
         self.assertEqual(self.last_text(), 'Registration guide is temporarily unavailable. Please try again.')
         self.assertEqual(self.last_buttons(), [[('🔄 Retry', 'guide:retry')]])
         await self.tap('guide:retry')  # the service is back
-        self.assertIn('SDU Portal Course Registration Guide', '\n'.join(self.sent_texts()[-3:]))
+        self.assertIn('How to create your schedule', '\n'.join(self.sent_texts()[-3:]))
         self.ai.assert_not_awaited()
 
     async def test_website_api_separates_missing_and_temporary(self):

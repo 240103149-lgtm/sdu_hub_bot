@@ -219,7 +219,8 @@ Rules:
   the wording the student used. The menu item in the student portal is named "Course Registration".
   Students also use informal words: "медпункт" / "медициналық орталық" = Medical
   Center; "жатақхана" / "общага" / "общежитие" / "дорм" = Student House;
-  "анықтама" / "справка" = reference; "СДУ" = SDU.
+  "анықтама" / "справка" = reference; "СДУ" = SDU; "файнал" / "финал" /
+  "финалка" / "сессия" = the final examinations in the academic calendar.
 {services}
 - FOLLOW-UP RULE: A short question often continues the conversation and refers
   to the subject of the previous messages (for example "оған қалай барсам
@@ -248,6 +249,9 @@ Rules:
   "{not_found}"
 - Be concise. For procedures, give short numbered steps. Use plain text;
   you may use **bold** for key words, but no tables or headings.
+- LIST RULE: three or more items (services, offices, documents, options) are a
+  list with one short item per line, each line starting with an emoji or "•",
+  never one long sentence joined with commas.
 
 KNOWLEDGE BASE:
 {knowledge}

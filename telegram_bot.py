@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import io
 import os
 import re
 import tempfile
@@ -30,6 +31,8 @@ from telegram import (
     BotCommandScopeChat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
     Update,
 )
 from telegram.constants import ChatAction, ParseMode
@@ -268,6 +271,41 @@ def home_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
 
 
+# The keyboard under the message field in private chats. A tap sends the
+# label as a message; the handlers below (and accounts_bot for the actions
+# that may need a sign-in) open the feature without the AI.
+KEYBOARD_ACTIONS = ("grade", "deadline", "rooms", "events", "guide", "documents", "account", "help")
+KEYBOARD_LABELS: dict[str, dict[str, str]] = i18n.by_lang("keyboard")
+# Bump when KEYBOARD_ACTIONS or the labels change: chats then get the new
+# keyboard with their next answer.
+KEYBOARD_VERSION = 1
+
+
+def reply_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    labels = KEYBOARD_LABELS[core.normalize_lang(lang)]
+    buttons = [KeyboardButton(labels[action]) for action in KEYBOARD_ACTIONS]
+    return ReplyKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)],
+                               resize_keyboard=True, is_persistent=True)
+
+
+def keyboard_labels(*actions: str) -> list[str]:
+    """The labels of these keyboard actions, in every language."""
+    return [KEYBOARD_LABELS[lang][action] for lang in core.LANGS for action in actions]
+
+
+def keyboard_action(label: str) -> str | None:
+    for lang in core.LANGS:
+        for action in KEYBOARD_ACTIONS:
+            if KEYBOARD_LABELS[lang][action] == (label or "").strip():
+                return action
+    return None
+
+
+def keyboard_key(lang: str) -> str:
+    """What user_data["keyboard"] holds once this chat has the current keyboard."""
+    return f"{KEYBOARD_VERSION}:{core.normalize_lang(lang)}"
+
+
 def help_keyboard(lang: str) -> InlineKeyboardMarkup:
     """The main menu plus "New chat", which replaces the old /reset."""
     rows = list(home_keyboard(lang).inline_keyboard)
@@ -285,6 +323,75 @@ def portal_keyboard(lang: str) -> InlineKeyboardMarkup | None:
     if not PORTAL_URL:
         return None
     return InlineKeyboardMarkup([[InlineKeyboardButton(text("portal", lang), url=PORTAL_URL)]])
+
+
+def guide_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Under the short guide: the full guide as a file, and the portal."""
+    rows = [[InlineKeyboardButton(text("btn_guide_file", lang), callback_data="guide:file")]]
+    if PORTAL_URL:
+        rows.append([InlineKeyboardButton(text("portal", lang), url=PORTAL_URL)])
+    return InlineKeyboardMarkup(rows)
+
+
+_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
+
+
+def _plain(line: str) -> str:
+    """Markdown inline marks out: **bold**, \\- escapes, [text](link) -> text (link)."""
+    line = _LINK.sub(lambda m: m.group(1) if m.group(1) == m.group(2) else f"{m.group(1)} ({m.group(2)})", line)
+    return re.sub(r"\\(.)", r"\1", line.replace("**", "")).strip()
+
+
+def guide_docx(source: str, title: str) -> bytes:
+    """The registration guide (Markdown) as a Word file to open on any phone."""
+    from docx import Document
+
+    doc = Document()
+    titled = False
+    table_rows: list[list[str]] = []
+
+    def flush_table() -> None:
+        if not table_rows:
+            return
+        table = doc.add_table(rows=len(table_rows), cols=len(table_rows[0]))
+        table.style = "Table Grid"
+        for r, row in enumerate(table_rows):
+            for c, cell in enumerate(row[: len(table_rows[0])]):
+                table.cell(r, c).text = cell
+                if r == 0:
+                    for run in table.cell(r, c).paragraphs[0].runs:
+                        run.bold = True
+        table_rows.clear()
+
+    for raw in source.splitlines():
+        line = raw.rstrip()
+        if line.startswith("|"):
+            cells = [_plain(cell) for cell in line.strip("|").split("|")]
+            if not all(re.fullmatch(r":?-+:?", cell.replace(" ", "")) for cell in cells if cell):
+                table_rows.append(cells)
+            continue
+        flush_table()
+        if not line.strip():
+            continue
+        heading = re.match(r"^(#+)\s*(.*)", line)
+        bullet = re.match(r"^\s*[*-]\s+(.*)", line)
+        number = re.match(r"^\s*(\d+)\.\s+(.*)", line)
+        if heading and not titled:
+            doc.add_heading(title, level=0)  # the file's first heading: its title
+            titled = True
+        elif heading:
+            doc.add_heading(_plain(heading.group(2)), level=min(len(heading.group(1)), 3))
+        elif bullet:
+            doc.add_paragraph(_plain(bullet.group(1)), style="List Bullet")
+        elif number:
+            # The number as written: Word's "List Number" would continue across sections.
+            doc.add_paragraph(f"{number.group(1)}. {_plain(number.group(2))}")
+        else:
+            doc.add_paragraph(_plain(line))
+    flush_table()
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
 
 
 def retry_keyboard(callback_data: str, lang: str) -> InlineKeyboardMarkup:
@@ -325,8 +432,29 @@ def welcome_text(update: Update, lang: str) -> str:
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Private chat: the welcome with the keyboard under the message field.
+    A group: the welcome with the inline main menu (no keyboard for everyone)."""
     lang = user_lang(update, context)
+    if update.effective_chat.type == "private":
+        context.user_data["keyboard"] = keyboard_key(lang)
+        await reply(update.effective_message, welcome_text(update, lang), reply_markup=reply_keyboard(lang))
+        return
     await reply(update.effective_message, welcome_text(update, lang), reply_markup=home_keyboard(lang))
+
+
+async def on_keyboard_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A keyboard tap that needs no sign-in (grades, deadlines and documents
+    are entry points of the sign-in conversation in accounts_bot)."""
+    from accounts_bot import cmd_account
+    from events_bot import cmd_events
+    from rooms_bot import cmd_rooms
+
+    handlers = {"rooms": cmd_rooms, "events": cmd_events, "guide": cmd_guide,
+                "account": cmd_account, "help": cmd_help}
+    action = keyboard_action(update.effective_message.text)
+    if action in handlers:
+        context.args = []
+        await handlers[action](update, context)
 
 
 async def edit_or_reply(update: Update, source: str, reply_markup: Any = None) -> None:
@@ -395,7 +523,13 @@ async def on_lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.answer(text("lang_set", chosen))
     if update.effective_chat.type == "private":
         await set_chat_menu(update, context, chosen)
-    # The picker becomes the home menu in the new language: no old-language copy is left.
+        # The keyboard under the message field can only come with a new message:
+        # the picker turns into a one-line confirmation, then the welcome follows.
+        await edit_or_reply(update, f"✅ {text('lang_set', chosen)}")
+        context.user_data["keyboard"] = keyboard_key(chosen)
+        await reply(update.effective_message, welcome_text(update, chosen), reply_markup=reply_keyboard(chosen))
+        return
+    # A group: the picker becomes the home menu in the new language.
     await edit_or_reply(update, welcome_text(update, chosen), reply_markup=home_keyboard(chosen))
 
 
@@ -423,7 +557,35 @@ async def cmd_guide(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not guide or not guide.strip():
         await update.effective_message.reply_text(core.msg("guide_missing", lang))
         return
-    await reply(update.effective_message, guide.strip(), reply_markup=portal_keyboard(lang))
+    # A short summary in the student's language; the full guide is a file.
+    await reply(update.effective_message, text("guide_short", lang), reply_markup=guide_keyboard(lang))
+
+
+async def on_guide_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """[📄 Full guide]: the whole guide as a Word file (as text if that fails)."""
+    query = update.callback_query
+    await query.answer()
+    lang = user_lang(update, context)
+    try:
+        guide = core.load_guide(lang)
+    except core.GuideError as exc:
+        print(f"[bot] registration guide: {exc}")
+        guide = None
+    if not guide or not guide.strip():
+        await update.effective_message.reply_text(core.msg("guide_error", lang),
+                                                  reply_markup=retry_keyboard("guide:retry", lang))
+        return
+    try:
+        data = guide_docx(guide, text("guide_file_title", lang))
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=io.BytesIO(data),
+            filename="SDU_course_registration_guide.docx",
+            caption=text("guide_file_caption", lang),
+        )
+    except Exception as exc:  # noqa: BLE001 - the student still gets the guide
+        print(f"[bot] could not send the guide file ({exc!r}); sending it as text")
+        await reply(update.effective_message, guide.strip(), reply_markup=portal_keyboard(lang))
 
 
 async def on_guide_retry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -530,8 +692,13 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(CommandHandler("guide", cmd_guide))
     app.add_handler(CallbackQueryHandler(on_guide_retry, pattern=r"^guide:retry$"))
+    app.add_handler(CallbackQueryHandler(on_guide_file, pattern=r"^guide:file$"))
     app.add_handler(CallbackQueryHandler(on_lang_chosen, pattern=r"^lang:"))
     app.add_handler(CallbackQueryHandler(on_menu, pattern=MENU_PATTERN))
+    app.add_handler(MessageHandler(
+        filters.ChatType.PRIVATE & filters.Text(keyboard_labels("rooms", "events", "guide", "account", "help")),
+        on_keyboard_button,
+    ))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_question))
     app.add_handler(
         MessageHandler(

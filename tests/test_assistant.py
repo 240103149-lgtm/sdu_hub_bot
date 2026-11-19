@@ -463,14 +463,17 @@ class AssistantBotTests(BotHarness):
         self.assertEqual(self.last_text(), 'F101, F102 and F103 are in block F.')
 
     async def test_events_guide_and_documents_cards(self):
-        self.script(call('get_campus_events'), say('All published events have already passed.'))
-        await self.text('Are there any upcoming campus events?')
-        self.assertIn('All published events have already passed.', self.all_sent())
+        self.script(call('get_campus_events', from_date='2026-09-01', to_date='2026-10-31'),
+                    say('These events took place in September and October.'))
+        await self.text('Which campus events were in September and October?')
+        self.assertIn('These events took place', self.all_sent())
         self.assertTrue(any(str(b).startswith('ev:') for row in self.buttons_of('Campus events') for b in row))
 
         self.script(call('get_registration_guide'), say('Here is the guide.'))
         await self.text('How do I register for courses?')
-        self.assertIn('https://my.sdu.edu.kz/', [b for row in self.last_buttons() for _, b in row])
+        self.assertIn('How to create your schedule', self.last_text())  # a short guide, not the whole file
+        buttons = [b for row in self.last_buttons() for _, b in row]
+        self.assertEqual(buttons, ['guide:file', 'https://my.sdu.edu.kz/'])
 
         self.script(call('get_required_documents', track='grant'), say('Here is the official list.'))
         await self.text('What documents do I need to submit?')
@@ -623,3 +626,10 @@ class AssistantBotTests(BotHarness):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NoteTests(unittest.TestCase):
+    def test_copied_shown_notes_are_removed_from_the_reply(self):
+        import assistant
+        text = 'Дереккөз: https://sdu.edu.kz/en/admission-3-2/\n[shown: the grant track document submission and missing documents]'
+        self.assertEqual(assistant.strip_notes(text), 'Дереккөз: https://sdu.edu.kz/en/admission-3-2/')

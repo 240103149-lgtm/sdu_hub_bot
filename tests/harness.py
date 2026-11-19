@@ -128,7 +128,9 @@ class BotHarness(unittest.IsolatedAsyncioTestCase):
 
     def last_buttons(self):
         markup = self.send.call_args.kwargs.get('reply_markup')
-        return [[(b.text, b.callback_data or b.url) for b in row] for row in markup.inline_keyboard] if markup else []
+        if markup is None or not hasattr(markup, 'inline_keyboard'):  # none, or the keyboard under the field
+            return []
+        return [[(b.text, b.callback_data or b.url) for b in row] for row in markup.inline_keyboard]
 
     def last_edit(self):
         return self.edit.call_args.kwargs.get('text', '')

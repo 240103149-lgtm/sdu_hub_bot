@@ -188,7 +188,9 @@ def register_accounts(app):
     from rooms_bot import cmd_rooms
 
     private = filters.ChatType.PRIVATE
-    only_text = filters.TEXT & ~filters.COMMAND & private
+    # Keyboard taps are not a student number or a password.
+    only_text = filters.TEXT & ~filters.COMMAND & private & ~filters.Text(bot.keyboard_labels(*bot.KEYBOARD_ACTIONS))
+    tapped = lambda *actions: private & filters.Text(bot.keyboard_labels(*actions))
     commands = {
         "start": bot.cmd_start, "help": bot.cmd_help, "lang": bot.cmd_lang,
         "reset": bot.cmd_reset, "guide": bot.cmd_guide,
@@ -204,6 +206,9 @@ def register_accounts(app):
             CallbackQueryHandler(menu_entry("login", login.cmd_login), pattern=r"^account:login$"),
             CallbackQueryHandler(menu_entry("assistant_portal", assistant_portal), pattern=r"^auth:portal$"),
             CallbackQueryHandler(menu_entry("assistant_moodle", assistant_moodle), pattern=r"^auth:moodle$"),
+            MessageHandler(tapped("grade"), entry("grade", grade.cmd_grade)),
+            MessageHandler(tapped("deadline"), entry("deadline", deadline.cmd_deadline)),
+            MessageHandler(tapped("documents"), entry("documents", docs.cmd_documents)),
             CommandHandler("grade", entry("grade", grade.cmd_grade), filters=private),
             CommandHandler(["deadline", "deadlines"], entry("deadline", deadline.cmd_deadline), filters=private),
             CommandHandler("documents", entry("documents", docs.cmd_documents), filters=private),
@@ -232,6 +237,7 @@ def register_accounts(app):
             CommandHandler("cancel", cancel),
             CallbackQueryHandler(leave(bot.on_menu), pattern=bot.MENU_PATTERN),
             CallbackQueryHandler(leave(bot.on_lang_chosen), pattern=r"^lang:"),
+            MessageHandler(tapped("rooms", "events", "guide", "account", "help"), leave(bot.on_keyboard_button)),
             CallbackQueryHandler(leave(account_button(grade.cmd_unlink)), pattern=r"^account:unlink$"),
             CallbackQueryHandler(leave(account_button(deadline.cmd_unlink_moodle)), pattern=r"^account:unlink_moodle$"),
         ] + [
