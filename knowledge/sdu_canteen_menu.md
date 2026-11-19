@@ -11,7 +11,7 @@ Prices are in tenge (₸). The canteen may also sell things that are not in this
 | Combo 2: chicken doner + cola 0.5 L + fries | Комбо 2: тауық етімен донер + кола 0,5 л + фри | Комбо 2: донер куриный + кола 0,5 л + фри | 2 790 ₸ |
 | Combo 3: beef doner + cola 0.5 L | Комбо 3: сиыр етімен донер + кола 0,5 л | Комбо 3: донер говяжий + кола 0,5 л | 2 090 ₸ |
 | Combo 4: beef doner + cola 0.5 L + fries | Комбо 4: сиыр етімен донер + кола 0,5 л + фри | Комбо 4: донер говяжий + кола 0,5 л + фри | 2 890 ₸ |
-| Super Combo: 2 chicken doners + cola 1 L + one more chicken doner at 50% | Супер комбо: тауық етімен 2 донер + кола 1 л + тағы бір донер 50% бағасымен | Супер комбо: 2 донера куриных + кола 1 л + ещё один донер за 50% | 4 790 ₸ |
+| Super Combo: 2 chicken doners + cola 1 L + chicken doner (50%), price for the whole set | Супер комбо: тауық етімен 2 донер + кола 1 л + тауық етімен донер (50%), бәрінің жалпы бағасы | Супер комбо: 2 донера куриных + кола 1 л + донер куриный (50%), цена за весь набор | 4 790 ₸ |
 
 ## Hot food | Ыстық тамақ | Горячее
 | Item | Қазақша | Русский | Price |
@@ -51,10 +51,11 @@ Prices are in tenge (₸). The canteen may also sell things that are not in this
 | "Kartoshka" cake | Тәтті картоп | Пирожное «Картошка» | 290 ₸ |
 | Muraveynik cake | Муравейник | Муравейник | 300 ₸ |
 | Milk baklava | Сүтті бақлава | Молочная пахлава | 300 ₸ |
-| "Tara" pie | Тара бәліш | Пирог «Тара» | 470 ₸ |
+| Millet pie | Тары бәліш | Пирог с пшеном | 470 ₸ |
 | Oreo pie | Орео бәліш | Пирог «Орео» | 590 ₸ |
 | Cottage cheese pie | Сүзбелі бәліш | Пирог с творогом | 690 ₸ |
 | Snickers pie | Сникерс бәліш | Пирог «Сникерс» | 750 ₸ |
+| "Appaq qyz" cake | Аппақ қыз | Пирожное «Аппақ қыз» | 810 ₸ |
 | Whoopie pie | Вупи пай | Вупи пай | 810 ₸ |
 | Zebra roll | Зебра рулеті | Рулет «Зебра» | 810 ₸ |
 | Chocolate roll | Шоколад рулеті | Шоколадный рулет | 810 ₸ |
@@ -67,4 +68,5 @@ Prices are in tenge (₸). The canteen may also sell things that are not in this
 How to answer:
 - Give the price of the item the student asked about, with its name in the answer language. For "what is in the canteen?" give the categories and a few examples, not the whole list (the 🍽 Canteen button shows the whole list).
 - Shawarma has two prices: without a drink, and with Coca-Cola.
+- The Super Combo price (4 790 ₸) is the total for the whole set, not a discount.
 - For a dish or drink that is not in this list, say that the bot's canteen list does not have it yet. Do not invent a price.
