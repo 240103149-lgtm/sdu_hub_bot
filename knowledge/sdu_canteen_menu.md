@@ -1,6 +1,6 @@
 # SDU canteen (асхана, столовая, кантин): menu and prices
 
-Source: photos of the canteen's price boards and price tags taken by the SDU Hub team on 19.11.2026 (tea: given by the team). There is no official web page for these prices, so do not add a source link.
+Source: photos of the canteen's price boards and price tags taken by the SDU Hub team on 19.11.2026; tea, ayran, soft drinks, the large pide and the extras were given by the team the same day. There is no official web page for these prices, so do not add a source link.
 
 Prices are in tenge (₸). The canteen may also sell things that are not in this list, and prices can change.
 
@@ -24,6 +24,9 @@ Prices are in tenge (₸). The canteen may also sell things that are not in this
 | Mixed shawarma + Coca-Cola | Ассорти шаурма + Coca-Cola | Шаурма ассорти + Coca-Cola | 1 690 ₸ |
 | Chicken kapsalon | Тауық етімен капсалон | Капсалон с курицей | 1 790 ₸ |
 | Beef kapsalon | Сиыр етімен капсалон | Капсалон с говядиной | 1 890 ₸ |
+| Chicken pide | Тауық етімен пиде | Пиде с курицей | 1 390 ₸ |
+| Beef pide | Сиыр етімен пиде | Пиде с говядиной | 1 490 ₸ |
+| Minced meat pide | Фаршпен пиде | Пиде с фаршем | 1 490 ₸ |
 | Khychin with cheese | Ірімшікті хычин | Хычины с сыром | 1 490 ₸ |
 | Corn hot dog | Жүгерілі хот-дог | Хот-дог кукурузный | 1 100 ₸ |
 | Chicken sandwich | Тауық етімен сэндвич | Сэндвич с курицей | 690 ₸ |
@@ -31,7 +34,7 @@ Prices are in tenge (₸). The canteen may also sell things that are not in this
 ## Baked goods | Тоқаш, бәліш | Выпечка
 | Item | Қазақша | Русский | Price |
 | :---- | :---- | :---- | :---- |
-| Pide | Пиде | Пиде | 460 ₸ |
+| Small pide (bakery counter) | Кішкентай пиде (тоқаш сөресінде) | Маленькое пиде (с витрины выпечки) | 460 ₸ |
 | Apple kattama | Алмалы қаттама | Катлама с яблоком | 460 ₸ |
 | Sausage in lavash | Лаваштағы шұжық | Сосиска в лаваше | 480 ₸ |
 | Baked sausage roll | Пісірілген шұжық | Сосиска в тесте | 450 ₸ |
@@ -64,9 +67,20 @@ Prices are in tenge (₸). The canteen may also sell things that are not in this
 | Item | Қазақша | Русский | Price |
 | :---- | :---- | :---- | :---- |
 | Tea | Шай | Чай | 150 ₸ |
+| Ayran | Айран | Айран | 350 ₸ |
+| Coca-Cola or another soft drink, 0.5 L | Coca-Cola немесе басқа газдалған сусын, 0,5 л | Coca-Cola или другой газированный напиток, 0,5 л | 450 ₸ |
+
+## Extras | Қосымша | Дополнительно
+| Item | Қазақша | Русский | Price |
+| :---- | :---- | :---- | :---- |
+| Straw | Трубочка | Трубочка | 20 ₸ |
+| Cup | Стаканчик | Стаканчик | 20 ₸ |
+| Fork | Шанышқы | Вилка | 20 ₸ |
 
 How to answer:
 - Give the price of the item the student asked about, with its name in the answer language. For "what is in the canteen?" give the categories and a few examples, not the whole list (the 🍽 Canteen button shows the whole list).
 - Shawarma has two prices: without a drink, and with Coca-Cola.
 - The Super Combo price (4 790 ₸) is the total for the whole set, not a discount.
+- Soft drinks: every 0.5 L soft drink like Coca-Cola costs 450 ₸. Which brands the canteen has is not listed: do not name brands other than Coca-Cola.
+- Pide: the large pide with chicken, beef or minced meat is hot food (1 390–1 490 ₸); the small pide on the bakery counter is 460 ₸.
 - For a dish or drink that is not in this list, say that the bot's canteen list does not have it yet. Do not invent a price.
