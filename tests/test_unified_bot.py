@@ -171,7 +171,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         await self.update('/start')  # Synthetic Telegram user locale is Kazakh.
         self.assertEqual(self.app.user_data[42]['lang'], 'en')
         self.assertIn('Hi, Student!', self.send.call_args.kwargs['text'])
-        self.assertEqual(self.send.call_args.kwargs['reply_markup'].keyboard[0][0].text, '📊 Grades')
+        self.assertEqual(self.send.call_args.kwargs['reply_markup'].keyboard[0][0].text, '👤 Account')
         await self.update(callback='lang:ru')
         await self.update('/start')
         self.assertIn('Привет, Student!', self.send.call_args.kwargs['text'])
@@ -198,7 +198,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
             for old in ['/deadline', '/grade', '/documents', '/unlink', '/login']:
                 self.assertNotIn(old, sent['text'])
             keyboard = sent['reply_markup'].keyboard  # under the message field, in a private chat
-            self.assertEqual([len(row) for row in keyboard], [2, 2, 2, 2])
+            self.assertEqual([len(row) for row in keyboard], [2, 2, 2, 1])
             self.assertEqual([b.text for row in keyboard for b in row],
                              [telegram_bot.KEYBOARD_LABELS[lang][a] for a in telegram_bot.KEYBOARD_ACTIONS])
         self.app.user_data[-100]['lang'] = 'en'
@@ -271,7 +271,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('✅', self.edit.call_args.kwargs['text'])
         self.assertEqual(self.send.await_count, sent_before + 1)
         self.assertIn('Просто напиши', self.send.call_args.kwargs['text'])
-        self.assertEqual(self.send.call_args.kwargs['reply_markup'].keyboard[0][0].text, '📊 Оценки')
+        self.assertEqual(self.send.call_args.kwargs['reply_markup'].keyboard[0][0].text, '👤 Аккаунт')
         self.assertEqual(self.answer.call_args.kwargs['text'], telegram_bot.text('lang_set', 'ru'))
 
     async def test_typed_lang_command_sends_the_picker(self):
@@ -285,7 +285,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         await self.update(callback='lang:en')
         self.assertIn('Language', self.send.call_args_list[-2].kwargs['text'])  # the confirmation, as a new message
         self.assertIn('Hi, Student!', self.send.call_args.kwargs['text'])
-        self.assertEqual(self.send.call_args.kwargs['reply_markup'].keyboard[0][0].text, '📊 Grades')
+        self.assertEqual(self.send.call_args.kwargs['reply_markup'].keyboard[0][0].text, '👤 Account')
 
     async def test_help_groups_account_controls_and_group_buttons_are_safe(self):
         self.app.user_data[-100]['lang'] = 'kk'
@@ -373,6 +373,10 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         await self.update('👤 Аккаунт')
         self.assertIn('Менің аккаунтым', self.send.call_args.kwargs['text'])
         self.ai.assert_not_awaited()
+        await self.update('🍽 Асхана')
+        self.assertIn('Шай — <b>150 ₸</b>', self.send.call_args.kwargs['text'])
+        self.assertIn('толықтырылады', self.send.call_args.kwargs['text'])
+        self.assertNotIn('grade', telegram_bot.KEYBOARD_ACTIONS)  # inside 👤 Account now
         await self.update('📆 Күнтізбе')  # the dates come from the AI, in the student's language
         self.ai.assert_awaited_once()
         self.assertEqual(self.ai.call_args.args[0], telegram_bot.KEYBOARD_LABELS['kk']['calendar_question'])
@@ -386,7 +390,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         await self.update('Грантқа құжат қалай тапсырамын?')
         self.assertEqual(self.app.user_data[42]['lang'], 'kk')  # later cards and steps are Kazakh too
         self.assertEqual(self.set_commands.call_args.kwargs['scope'].chat_id, 42)
-        self.assertEqual(self.send.call_args.kwargs['reply_markup'].keyboard[0][0].text, '📊 Бағалар')
+        self.assertEqual(self.send.call_args.kwargs['reply_markup'].keyboard[0][0].text, '👤 Аккаунт')
         self.assertEqual(self.app.user_data[42]['keyboard'], telegram_bot.keyboard_key('kk'))
         await self.update(callback='menu:events')
         self.assertTrue(any(events_bot.TEXTS['kk']['title'] in c.kwargs['text'] for c in self.send.call_args_list))
@@ -407,14 +411,15 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         await self.update('/account')
         sent = self.send.call_args.kwargs
         self.assertIn('Менің аккаунтым', sent['text'])
-        self.assertEqual([row[0].callback_data for row in sent['reply_markup'].inline_keyboard],
-                         ['account:login', 'menu:deadline'])
+        rows = sent['reply_markup'].inline_keyboard
+        self.assertEqual([b.callback_data for b in rows[0]], ['menu:grade', 'menu:deadline'])  # grades and deadlines live here
+        self.assertEqual([row[0].callback_data for row in rows[1:]], ['account:login', 'menu:deadline'])
         self.app.user_data[42]['portal'] = {'student_id': '240103149', 'cookies': {}}
         self.app.user_data[42]['moodle'] = {'mode': 'token', 'token': 't'}
         await self.update('/account')
         sent = self.send.call_args.kwargs
         self.assertIn('240103149', sent['text'])
-        self.assertEqual([row[0].callback_data for row in sent['reply_markup'].inline_keyboard],
+        self.assertEqual([row[0].callback_data for row in sent['reply_markup'].inline_keyboard[1:]],
                          ['account:unlink', 'account:unlink_moodle'])
         await self.update(callback='account:unlink')
         await self.update(callback='account:unlink_moodle')

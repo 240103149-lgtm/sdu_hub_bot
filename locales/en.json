@@ -381,6 +381,12 @@
     "documents": "📄 Documents",
     "account": "👤 Account",
     "calendar": "📆 Calendar",
-    "calendar_question": "What are the main academic calendar dates of this semester?"
+    "calendar_question": "What are the main academic calendar dates of this semester?",
+    "canteen": "🍽 Canteen"
+  },
+  "canteen": {
+    "title": "🍽 SDU canteen: prices",
+    "note": "ℹ️ The list is not complete yet: more dishes and what each combo contains will be added later.",
+    "missing": "The canteen menu has not been added yet."
   }
 }
