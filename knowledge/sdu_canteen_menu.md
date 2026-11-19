@@ -1,6 +1,6 @@
 # SDU canteen (асхана, столовая, кантин): menu and prices
 
-Source: photos of the canteen's price boards and price tags taken by the SDU Hub team on 19.11.2026; tea, ayran, soft drinks, the large pide and the extras were given by the team the same day. There is no official web page for these prices, so do not add a source link.
+Source: photos of the canteen's price boards and price tags taken by the SDU Hub team on 19.11.2026; MacCoffee, MacTea, ayran, soft drinks, the large pide and the extras were given by the team the same day. There is no official web page for these prices, so do not add a source link.
 
 Prices are in tenge (₸). The canteen may also sell things that are not in this list, and prices can change.
 
@@ -66,7 +66,8 @@ Prices are in tenge (₸). The canteen may also sell things that are not in this
 ## Drinks | Сусындар | Напитки
 | Item | Қазақша | Русский | Price |
 | :---- | :---- | :---- | :---- |
-| Tea | Шай | Чай | 150 ₸ |
+| MacCoffee (instant coffee) | MacCoffee (ерігіш кофе) | MacCoffee (растворимый кофе) | 150 ₸ |
+| MacTea (instant tea) | MacTea (ерігіш шай) | MacTea (растворимый чай) | 150 ₸ |
 | Ayran | Айран | Айран | 350 ₸ |
 | Coca-Cola or another soft drink, 0.5 L | Coca-Cola немесе басқа газдалған сусын, 0,5 л | Coca-Cola или другой газированный напиток, 0,5 л | 450 ₸ |
 
@@ -81,6 +82,7 @@ How to answer:
 - Give the price of the item the student asked about, with its name in the answer language. For "what is in the canteen?" give the categories and a few examples, not the whole list (the 🍽 Canteen button shows the whole list).
 - Shawarma has two prices: without a drink, and with Coca-Cola.
 - The Super Combo price (4 790 ₸) is the total for the whole set, not a discount.
+- Tea and coffee ("шай", "чай", "кофе") are MacTea and MacCoffee, 150 ₸ each.
 - Soft drinks: every 0.5 L soft drink like Coca-Cola costs 450 ₸. Which brands the canteen has is not listed: do not name brands other than Coca-Cola.
 - Pide: the large pide with chicken, beef or minced meat is hot food (1 390–1 490 ₸); the small pide on the bakery counter is 460 ₸.
 - For a dish or drink that is not in this list, say that the bot's canteen list does not have it yet. Do not invent a price.
