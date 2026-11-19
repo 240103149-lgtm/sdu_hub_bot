@@ -146,11 +146,15 @@ def menu_entry(feature, callback):
 
 
 def account_keyboard(context, lang):
-    """Sign in, link Moodle or unlink: one button per account."""
+    """Grades and deadlines first (they sign the student in when needed),
+    then sign in, link Moodle or unlink: one button per account."""
     t = lambda key: A[key][lang]
     portal = login._student_id(context)
     moodle = (context.user_data or {}).get("moodle")
+    labels = bot.KEYBOARD_LABELS[lang]
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton(labels["grade"], callback_data="menu:grade"),
+         InlineKeyboardButton(labels["deadline"], callback_data="menu:deadline")],
         [InlineKeyboardButton(t("btn_unlink_portal") if portal else t("btn_signin_portal"),
                               callback_data="account:unlink" if portal else "account:login")],
         [InlineKeyboardButton(t("btn_unlink_moodle") if moodle else t("btn_link_moodle"),
@@ -189,7 +193,7 @@ def register_accounts(app):
 
     private = filters.ChatType.PRIVATE
     # Keyboard taps are not a student number or a password.
-    only_text = filters.TEXT & ~filters.COMMAND & private & ~filters.Text(bot.keyboard_labels(*bot.KEYBOARD_ACTIONS))
+    only_text = filters.TEXT & ~filters.COMMAND & private & ~filters.Text(bot.keyboard_labels(*bot.KEYBOARD_ACTIONS, *bot.OLD_KEYBOARD_ACTIONS))
     tapped = lambda *actions: private & filters.Text(bot.keyboard_labels(*actions))
     commands = {
         "start": bot.cmd_start, "help": bot.cmd_help, "lang": bot.cmd_lang,
@@ -237,7 +241,7 @@ def register_accounts(app):
             CommandHandler("cancel", cancel),
             CallbackQueryHandler(leave(bot.on_menu), pattern=bot.MENU_PATTERN),
             CallbackQueryHandler(leave(bot.on_lang_chosen), pattern=r"^lang:"),
-            MessageHandler(tapped("calendar", "rooms", "events", "guide", "account"), leave(bot.on_keyboard_button)),
+            MessageHandler(tapped("calendar", "rooms", "events", "canteen", "guide", "account"), leave(bot.on_keyboard_button)),
             CallbackQueryHandler(leave(account_button(grade.cmd_unlink)), pattern=r"^account:unlink$"),
             CallbackQueryHandler(leave(account_button(deadline.cmd_unlink_moodle)), pattern=r"^account:unlink_moodle$"),
         ] + [

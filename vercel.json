@@ -25,6 +25,7 @@
           "assistant.py",
           "assistant_bot.py",
           "academic_calendar.py",
+          "canteen.py",
           "data/*.json",
           "locales/*.json",
           "static/**",

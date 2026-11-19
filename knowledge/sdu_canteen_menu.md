@@ -4,12 +4,12 @@ Source: the SDU Hub team, checked 19.11.2026. There is no official web page for 
 
 This list is NOT complete yet: more dishes, and what each combo contains, will be added later. Prices are in tenge (₸).
 
-| Item | Price |
-| :---- | :---- |
-| Combo 1 | 1 690 ₸ |
-| Combo 2 | 3 290 ₸ |
-| Combo 3 | 5 190 ₸ |
-| Tea | 150 ₸ |
+| Item | Қазақша | Русский | Price |
+| :---- | :---- | :---- | :---- |
+| Combo 1 | Комбо 1 | Комбо 1 | 1 690 ₸ |
+| Combo 2 | Комбо 2 | Комбо 2 | 3 290 ₸ |
+| Combo 3 | Комбо 3 | Комбо 3 | 5 190 ₸ |
+| Tea | Шай | Чай | 150 ₸ |
 
 How to answer:
 - Give the price of the item the student asked about. For "what is in the canteen?" list all four items with their prices.
