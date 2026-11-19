@@ -646,7 +646,7 @@ class CanteenTests(unittest.TestCase):
         import canteen
         import telegram_bot
         menu = canteen.load_menu()
-        self.assertEqual([names[0] for names, _ in menu], ['Combos', 'Hot food', 'Baked goods', 'Desserts', 'Drinks'])
+        self.assertEqual([names[0] for names, _ in menu], ['Combos', 'Hot food', 'Baked goods', 'Desserts', 'Drinks', 'Extras'])
         self.assertTrue(all(row[3].endswith('₸') for _, rows in menu for row in rows))
         for lang in ['kk', 'ru', 'en']:
             card = canteen.render(lang)
