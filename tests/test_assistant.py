@@ -482,6 +482,14 @@ class AssistantBotTests(BotHarness):
         self.assertIn('https://sdu.edu.kz/en/admission-3-2/', card)
         self.assertEqual(self.last_buttons(), [[('📄 Submit documents', 'menu:documents')]])
 
+    async def test_canteen_total_is_a_bill_from_the_code(self):
+        self.script(call('canteen_order_total', items=[{'name': 'Beef shawarma', 'quantity': 2}, {'name': 'Ayran'}]),
+                    say('Here is your bill.'))
+        await self.text('2 сиыр етімен шаурма мен айран қанша болады?')
+        self.assertIn('Барлығы: 3 330 ₸', self.all_sent())  # 2 × 1 490 + 350, added up in code
+        call_, data = self.model.results[-1][-1]  # what the model reads back
+        self.assertEqual((call_.name, data['total_tenge']), ('canteen_order_total', 3330))
+
     async def test_personal_data_is_not_shown_in_a_group(self):
         self.app.user_data[-100]['lang'] = 'en'
         self.app.user_data[-100]['portal'] = {'student_id': '240103149', 'cookies': {}}
@@ -652,3 +660,30 @@ class CanteenTests(unittest.TestCase):
             card = canteen.render(lang)
             self.assertEqual(len(telegram_bot.render_chunks(card)), 1)
         self.assertIn('• Сиыр етімен шаурма + Coca-Cola — **1 690 ₸**', canteen.render('kk'))
+
+
+class CanteenOrderTests(unittest.TestCase):
+    def test_the_code_adds_up_the_order(self):
+        import canteen
+        order = canteen.order_total([
+            {'name': 'Chicken shawarma', 'quantity': 2},
+            {'name': 'айран'},                       # any language, no quantity: 1
+            {'name': 'Combo 2'},                     # the start of a long name
+            {'name': 'Шанышқы', 'quantity': '3'},
+            {'name': 'chiken shawarma'},             # a typo: the same dish, one line
+            {'name': 'Pizza'},                       # not in the menu: not counted
+        ])
+        self.assertEqual([(line.names[0], line.quantity) for line in order.lines],
+                         [('Chicken shawarma', 3), ('Ayran', 1),
+                          ('Combo 2: chicken doner + cola 0.5 L + fries', 1), ('Fork', 3)])
+        self.assertEqual(order.total, 3 * 1390 + 350 + 2790 + 3 * 20)
+        self.assertEqual(order.unknown, ['Pizza'])
+        card = canteen.render_order(order, 'kk')
+        self.assertIn('Барлығы: 7 370 ₸', card)
+        self.assertIn('Pizza', card)
+
+    def test_an_unclear_name_is_never_guessed(self):
+        import canteen
+        order = canteen.order_total([{'name': 'шаурма'}, {'name': 'Chicken shawarma', 'quantity': 999}])
+        self.assertEqual(order.unknown, ['шаурма'])  # chicken, beef or mixed? not chosen by the code
+        self.assertEqual(order.lines[0].quantity, canteen.MAX_QUANTITY)

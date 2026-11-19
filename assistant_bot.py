@@ -401,6 +401,23 @@ class TelegramToolbox:
                 } for tr in tracks}}
         return assistant.ToolResult(data, summary="[shown: the official list of enrollment documents]")
 
+    async def tool_canteen_order_total(self, args: dict, lang: str) -> assistant.ToolResult:
+        import canteen
+
+        order = canteen.order_total(args.get("items") or [])
+        if order is None:
+            self.cards.append(Card(canteen.TEXTS[lang]["missing"]))
+            return assistant.ToolResult({"error": "the canteen menu is not available"})
+        self.cards.append(Card(canteen.render_order(order, lang)))
+        data = {
+            "items": [{"name": line.names[0], "quantity": line.quantity, "price": line.price,
+                       "subtotal": line.subtotal} for line in order.lines],
+            "total_tenge": order.total,
+            "not_in_menu": order.unknown,
+        }
+        names = ", ".join(f"{line.names[0]} x{line.quantity}" for line in order.lines) or "nothing"
+        return assistant.ToolResult(data, summary=f"[shown: a canteen bill: {names}; total {canteen.money(order.total)}]")
+
     async def tool_sign_in(self, args: dict, lang: str) -> assistant.ToolResult:
         account = "moodle" if args.get("account") == "moodle" else "portal"
         if self.context.user_data.get(account):

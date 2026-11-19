@@ -387,6 +387,10 @@
   "canteen": {
     "title": "🍽 SDU canteen: prices",
     "note": "ℹ️ Prices from the canteen's price tags, 19.11.2026. Some items may be missing, and prices can change.",
-    "missing": "The canteen menu has not been added yet."
+    "missing": "The canteen menu has not been added yet.",
+    "order_title": "🧾 Canteen order",
+    "order_total": "Total: {total}",
+    "order_unknown": "❔ Not in the bot's canteen list, so not counted: {names}",
+    "order_note": "The total is worked out from the price tags (19.11.2026); the price at the till can differ."
   }
 }

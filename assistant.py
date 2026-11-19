@@ -128,6 +128,28 @@ TOOLS: tuple[Tool, ...] = (
         }),
     ),
     Tool(
+        "canteen_order_total",
+        "Adds up the price of a canteen order in code and shows it as a bill: each item, its "
+        "quantity and price, and the total. Use it whenever the student asks how much several "
+        "canteen items cost together, or the price of more than one of an item (\"2 shawarmas "
+        "and an ayran - how much?\"). Never add canteen prices up yourself.",
+        _args(items={
+            "type": "array",
+            "description": "The items of the order.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The item's English name exactly as in the "
+                             "Item column of the canteen menu in the knowledge base, e.g. 'Chicken shawarma', "
+                             "'Ayran', 'Combo 2: chicken doner + cola 0.5 L + fries'. Turn the student's words "
+                             "in any language into that name."},
+                    "quantity": {"type": "integer", "description": "How many; 1 if not said."},
+                },
+                "required": ["name"],
+            },
+        }),
+    ),
+    Tool(
         "sign_in",
         "Opens the bot's secure sign-in when the student asks to log in or to link an account.",
         _args(account={
@@ -146,7 +168,8 @@ SERVICES_RULE = """- TOOLS: you can act, not only answer. The student's own data
   find_free_rooms (free classrooms; turn "now",
   "tomorrow", "after 2 pm" into a date and HH:MM), get_campus_events,
   get_registration_guide, get_required_documents (enrollment documents and the
-  student's own submission), sign_in (when they ask to log in). Do not use the
+  student's own submission), canteen_order_total (the total price of several
+  canteen items: the code adds it up, never you), sign_in (when they ask to log in). Do not use the
   fallback sentence for these questions.
 - University dates - course registration, add/drop, withdrawal ("уиздроул",
   "withdraw"), final exams, FX, resits - are answered from the academic
