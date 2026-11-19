@@ -638,7 +638,7 @@ class NoteTests(unittest.TestCase):
 class CanteenTests(unittest.TestCase):
     def test_canteen_prices_are_in_the_knowledge_base(self):
         prompt, _ = core.system_prompt('Асханада шай қанша тұрады?', 'kk')
-        for line in ['| 1 990 ₸ |', '| Tea | Шай | Чай | 150 ₸ |', '| Corn hot dog | Жүгерілі хот-дог | Хот-дог кукурузный | 1 100 ₸ |']:
+        for line in ['| 1 990 ₸ |', '| MacTea (instant tea) | MacTea (ерігіш шай) | MacTea (растворимый чай) | 150 ₸ |', '| Corn hot dog | Жүгерілі хот-дог | Хот-дог кукурузный | 1 100 ₸ |']:
             self.assertIn(line, prompt)
         self.assertIn('Do not invent a price', prompt)
 
