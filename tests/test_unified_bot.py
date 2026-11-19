@@ -374,8 +374,10 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Менің аккаунтым', self.send.call_args.kwargs['text'])
         self.ai.assert_not_awaited()
         await self.update('🍽 Асхана')
-        self.assertIn('MacTea (ерігіш шай) — <b>150 ₸</b>', self.send.call_args.kwargs['text'])
-        self.assertIn('Комбо 1: тауық етімен донер + кола 0,5 л — <b>1 990 ₸</b>', self.send.call_args.kwargs['text'])
+        cards = [c.kwargs['text'] for c in self.send.call_args_list[-2:]]  # the two counters
+        self.assertIn('MacTea (ерігіш шай) — <b>150 ₸</b>', cards[0])
+        self.assertIn('Комбо 1: тауық етімен донер + кола 0,5 л — <b>1 990 ₸</b>', cards[0])
+        self.assertIn('Belka Food', cards[1])
         self.assertNotIn('grade', telegram_bot.KEYBOARD_ACTIONS)  # inside 👤 Account now
         await self.update('📆 Күнтізбе')  # the dates come from the AI, in the student's language
         self.ai.assert_awaited_once()
