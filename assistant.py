@@ -104,8 +104,9 @@ TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         "get_campus_events",
-        "The published campus events with their date, time, venue and whether they are "
-        "upcoming or have passed; optionally only those that start between from_date and to_date.",
+        "The published campus events with their date, time and venue. Without dates: only the "
+        "events that have not passed yet. With from_date and to_date: every event that starts "
+        "between them, with whether it is upcoming or has passed.",
         _args(from_date=DATE, to_date=DATE),
     ),
     Tool(
@@ -168,7 +169,20 @@ SERVICES_RULE = """- TOOLS: you can act, not only answer. The student's own data
   the data could not be loaded, say so briefly. Never invent grades,
   deadlines, rooms or events.
 - NEVER ask for a password, a verification code or any other credentials in
-  the chat: the bot signs the student in through its own secure sign-in."""
+  the chat: the bot signs the student in through its own secure sign-in.
+- Earlier answers in the conversation may end with notes such as "[shown: ...]".
+  They only tell you what a card showed: never write such a note yourself.
+- When the student asks what you can do or help with, answer with this list,
+  one line each, in the answer language, after one short opening line:
+  📊 grades and GPA, also for one course
+  📅 Moodle deadlines
+  📆 academic calendar dates (registration, add/drop, withdrawal, exams, FX)
+  🚪 free classrooms for a chosen time
+  🎉 campus events
+  📚 the course registration (schedule) guide
+  📄 enrollment documents
+  🏫 campus services: dormitory, medical center, library, contacts
+  Then one short line that they can just write their question."""
 
 
 # ---------------------------------------------------------- the results ----
@@ -413,12 +427,13 @@ async def run(question: str, history: Sequence[Any] | None, lang: str, toolbox: 
             # (<result name="get_my_grades">...</result>): run it, and let the
             # card answer. That text is never shown to the student.
             if await _run_calls(written, toolbox, reply_lang, answer) is not None:
-                answer.text = strip_written_calls(reply.text)
+                answer.text = strip_notes(strip_written_calls(reply.text))
             return answer
         if not reply.calls:
             # A plain answer goes through the US1 rules (fallback sentence plus
             # contacts); after tools, the cards carry the data and the text may be short.
-            answer.text = reply.text.strip() if answer.tools else core.finish_reply(reply.text, reply_lang)
+            text = strip_notes(reply.text)
+            answer.text = text if answer.tools else core.finish_reply(text, reply_lang)
             return answer
         results = await _run_calls(reply.calls, toolbox, reply_lang, answer)
         if results is None:
@@ -479,3 +494,13 @@ def written_calls(text: str) -> list[Call]:
 def strip_written_calls(text: str) -> str:
     """The reply without the tool calls written into it."""
     return _WRITTEN.sub("", text or "").strip()
+
+
+# The "[shown: ...]" notes the history keeps after a card (assistant_bot);
+# a model sometimes copies one into its reply.
+_NOTE = re.compile(r"\[\s*shown:[^\]]*\]", re.IGNORECASE)
+
+
+def strip_notes(text: str) -> str:
+    """The reply without "[shown: ...]" notes copied from the history."""
+    return re.sub(r"\n{3,}", "\n\n", _NOTE.sub("", text or "")).strip()

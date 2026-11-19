@@ -155,6 +155,16 @@ def load_events() -> list[Event] | None:
 # -------------------------------------------------------------- rendering ----
 
 
+def visible(events: list[Event], today: date, start: date | None = None,
+            end: date | None = None) -> list[Event]:
+    """The events to list. With chosen dates: every event in them, passed ones
+    too (the student asked for those dates). Without: only events that have
+    not passed yet, so the list does not fill up with old events."""
+    if start and end:
+        return [e for e in events if e.start and start <= e.start <= end]
+    return [e for e in events if e.start is None or e.start >= today]
+
+
 def _status(event: Event, lang: str, today: date) -> str:
     labels = TEXTS[core.normalize_lang(lang)]
     if event.status == "cancelled":
@@ -185,13 +195,13 @@ def render_events(source: str, lang: str, today: date | None = None,
     events = parse_events(source)
     if not events:
         return labels["missing"]
-    if start and end:
-        events = [e for e in events if e.start and start <= e.start <= end]
+    events = visible(events, today, start, end)
     lines = [f"# {labels['title']}"]
     if start and end:
         lines.append(labels["range"].format(start=f"{start:%d.%m.%Y}", end=f"{end:%d.%m.%Y}"))
     if not events:
-        return "\n".join(lines + ["", labels["none"], "", labels["range_hint"].format(example=_example(today))])
+        empty = labels["none"] if start and end else labels["none_upcoming"]
+        return "\n".join(lines + ["", empty, "", labels["range_hint"].format(example=_example(today))])
     for position, event in enumerate(events, start=1):  # numbered as shown; the button knows the event
         status = _status(event, lang, today)
         lines += ["", f"{position}. **{event.title}**" + (f" · {status}" if status else ""), _summary(event, lang)]
@@ -214,10 +224,10 @@ def _example(today: date) -> str:
     return f"/events {first:%d.%m}-{last:%d.%m}"
 
 
-def details_keyboard(source: str, start: date | None, end: date | None) -> InlineKeyboardMarkup | None:
-    events = parse_events(source)
-    if start and end:
-        events = [e for e in events if e.start and start <= e.start <= end]
+def details_keyboard(source: str, start: date | None, end: date | None,
+                     today: date | None = None) -> InlineKeyboardMarkup | None:
+    today = today or datetime.now(CAMPUS_TZ).date()
+    events = visible(parse_events(source), today, start, end)
     buttons = [
         InlineKeyboardButton(f"ℹ️ {position}", callback_data=f"ev:{e.number}")
         for position, e in enumerate(events, start=1)

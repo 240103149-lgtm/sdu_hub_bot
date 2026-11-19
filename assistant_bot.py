@@ -58,13 +58,17 @@ from grade import PortalError
 from moodle import MoodleError
 from telegram_bot import (
     PORTAL_URL,
+    guide_keyboard,
+    keyboard_key,
+    reply_keyboard,
+    set_chat_menu,
     keep_typing,
-    portal_keyboard,
     render_chunks,
     retry_keyboard,
     strip_tags,
     user_lang,
 )
+from telegram_bot import text as bot_text
 
 PENDING_TTL = 900  # seconds a question waits for its sign-in
 REMEMBERED = 1500  # characters of one answer (with its tool summaries) kept in the history
@@ -327,8 +331,7 @@ class TelegramToolbox:
         self.cards.append(Card(events_bot.render_events(source, lang, start=start, end=end),
                                events_bot.details_keyboard(source, start, end)))
         today = datetime.now(rooms.CAMPUS_TZ).date()
-        events = [e for e in events_bot.parse_events(source)
-                  if not (start and end) or (e.start and start <= e.start <= end)]
+        events = events_bot.visible(events_bot.parse_events(source), today, start, end)
 
         def status(event) -> str:
             if event.status != "scheduled":
@@ -354,9 +357,11 @@ class TelegramToolbox:
         if not guide or not guide.strip():
             self.cards.append(Card(core.msg("guide_missing", lang)))
             return assistant.ToolResult({"error": "no guide is published for this semester"})
-        self.cards.append(Card(guide.strip(), portal_keyboard(lang)))
-        return assistant.ToolResult({"shown": "the full registration guide", "portal": PORTAL_URL},
-                                    summary="[shown: the course registration guide]")
+        # The card is a short summary with [📄 Full guide] (a file) and the portal button.
+        self.cards.append(Card(bot_text("guide_short", lang), guide_keyboard(lang)))
+        return assistant.ToolResult({"shown": "a short summary of the registration guide, with a button "
+                                              "that sends the full guide as a file", "portal": PORTAL_URL},
+                                    summary="[shown: the short registration guide and the full-guide button]")
 
     async def tool_get_required_documents(self, args: dict, lang: str) -> assistant.ToolResult:
         try:
@@ -474,8 +479,20 @@ async def answer_question(update: Update, context: ContextTypes.DEFAULT_TYPE, qu
     finally:
         typing.cancel()
 
+    private = update.effective_chat.type == "private"
+    if (private and answer.lang != lang and answer.lang in core.LANGS
+            and (len(text.split()) >= 3 or any(ch in core.KAZAKH_LETTERS for ch in text))):
+        # The student writes in another language now: the buttons, cards and
+        # later steps (sign-in, documents) follow it, not only this answer.
+        context.user_data["lang"] = lang = answer.lang
+        await set_chat_menu(update, context, lang)
+    keyboard = None
+    if private and context.user_data.get("keyboard") != keyboard_key(lang):
+        keyboard = reply_keyboard(lang)  # new or changed keyboard, with this answer
     if answer.text:
-        await send_card(context.bot, chat_id, Card(answer.text))
+        await send_card(context.bot, chat_id, Card(answer.text, keyboard))
+        if keyboard is not None:
+            context.user_data["keyboard"] = keyboard_key(lang)
     for card in toolbox.cards:
         await send_card(context.bot, chat_id, card)
     if answer.auth:
