@@ -220,7 +220,9 @@ Rules:
   Students also use informal words: "медпункт" / "медициналық орталық" = Medical
   Center; "жатақхана" / "общага" / "общежитие" / "дорм" = Student House;
   "анықтама" / "справка" = reference; "СДУ" = SDU; "файнал" / "финал" /
-  "финалка" / "сессия" = the final examinations in the academic calendar.
+  "финалка" / "сессия" = the final examinations in the academic calendar;
+  "асхана" / "столовая" / "кантин" / "canteen" = the SDU canteen; "шай" /
+  "чай" = tea.
 {services}
 - FOLLOW-UP RULE: A short question often continues the conversation and refers
   to the subject of the previous messages (for example "оған қалай барсам

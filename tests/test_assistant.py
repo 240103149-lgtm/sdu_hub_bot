@@ -633,3 +633,11 @@ class NoteTests(unittest.TestCase):
         import assistant
         text = 'Дереккөз: https://sdu.edu.kz/en/admission-3-2/\n[shown: the grant track document submission and missing documents]'
         self.assertEqual(assistant.strip_notes(text), 'Дереккөз: https://sdu.edu.kz/en/admission-3-2/')
+
+
+class CanteenTests(unittest.TestCase):
+    def test_canteen_prices_are_in_the_knowledge_base(self):
+        prompt, _ = core.system_prompt('Асханада шай қанша тұрады?', 'kk')
+        for line in ['| Combo 1 | 1 690 ₸ |', '| Combo 2 | 3 290 ₸ |', '| Combo 3 | 5 190 ₸ |', '| Tea | 150 ₸ |']:
+            self.assertIn(line, prompt)
+        self.assertIn('NOT complete yet', prompt)
