@@ -173,7 +173,7 @@ async def on_schedule(update, context):
 
 
 def register(app):
-    app.add_handler(CommandHandler("notifications", cmd_notifications, filters=filters.ChatType.PRIVATE))
+    app.add_handler(CommandHandler(["notify", "notifications"], cmd_notifications, filters=filters.ChatType.PRIVATE))
     app.add_handler(CommandHandler("schedule", cmd_schedule, filters=filters.ChatType.PRIVATE))
     app.add_handler(CallbackQueryHandler(on_settings, pattern=r"^notify:(home|deadline|class)$"))
     app.add_handler(CallbackQueryHandler(on_schedule, pattern=r"^schedule:(home|toggle:[a-f0-9]{16}|page:\d+)$"))
