@@ -201,7 +201,7 @@ def register_accounts(app):
     only_text = filters.TEXT & ~filters.COMMAND & private & ~filters.Text(bot.keyboard_labels(*bot.KEYBOARD_ACTIONS, *bot.OLD_KEYBOARD_ACTIONS))
     tapped = lambda *actions: private & filters.Text(bot.keyboard_labels(*actions))
     commands = {
-        "notifications": cmd_notifications, "schedule": cmd_schedule,
+        "notify": cmd_notifications, "notifications": cmd_notifications, "schedule": cmd_schedule,
         "start": bot.cmd_start, "help": bot.cmd_help, "lang": bot.cmd_lang,
         "reset": bot.cmd_reset, "guide": bot.cmd_guide,
         "rooms": cmd_rooms, "room": cmd_rooms, "events": cmd_events,
