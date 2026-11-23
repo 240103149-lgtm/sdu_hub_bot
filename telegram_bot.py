@@ -80,13 +80,13 @@ LANG_BUTTONS = [("kk", "🇰🇿 Қазақша"), ("ru", "🇷🇺 Русски
 # All texts are in locales/<lang>.json (US6); only the order of menus is set here.
 BOT: dict[str, dict[str, str]] = i18n.by_lang("bot")
 
-# The Telegram "/" menu shows only these four. Every feature is reached by
+# The Telegram "/" menu exposes the five everyday commands. Every feature is reached by
 # asking in plain words (the AI assistant) or from the /start buttons, so a
 # new feature adds an assistant tool and maybe a button, not a command.
 # The older commands (/grade, /deadline, /rooms, /events, /documents,
 # /guide, /login, /reset, /unlink, /unlink_moodle, /cancel) keep working
 # for students who type them; they are just not listed.
-COMMAND_ORDER = ("start", "account", "lang", "help")
+COMMAND_ORDER = ("start", "account", "notify", "lang", "help")
 COMMAND_LABELS: dict[str, list[tuple[str, str]]] = {
     lang: [(name, labels[name]) for name in COMMAND_ORDER]
     for lang, labels in i18n.by_lang("commands").items()
@@ -94,7 +94,7 @@ COMMAND_LABELS: dict[str, list[tuple[str, str]]] = {
 # Bump when COMMAND_ORDER changes. A chat menu saved by Telegram (set when the
 # student picked a language) overrides the default menu, so each private chat
 # gets its menu set again once, on its next update (refresh_chat_menu).
-MENU_VERSION = 2
+MENU_VERSION = 3
 REVIEW_LABEL: dict[str, str] = {lang: labels["review"] for lang, labels in i18n.by_lang("commands").items()}
 
 
@@ -103,7 +103,7 @@ def text(key: str, lang: str) -> str:
 
 
 def command_menu(lang: str, user_id: int | None = None) -> list[BotCommand]:
-    """The "/" menu for one chat: the four commands, plus /review for the
+    """The "/" menu for one chat: the five commands, plus /review for the
     admissions staff (DOCUMENTS_REVIEWER_IDS)."""
     from documents_bot import reviewer_ids
 
@@ -445,13 +445,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         arg = (context.args or [""])[0]
         if re.fullmatch(r"section_[a-f0-9]{16}", arg):
             from notifications_bot import show_schedule
-            import student_schedule
-
-            group = next((g for g in student_schedule.groups() if g["id"] == arg[8:]), None)
-            # Deep links open a choice card. Only the student's Add tap subscribes.
-            if group:
-                await show_schedule(update, context, group["course"])
-                return
+            # Legacy section links now open the authenticated timetable.
+            await show_schedule(update, context)
+            return
         if arg == "reminders":
             from notifications_bot import cmd_notifications
 

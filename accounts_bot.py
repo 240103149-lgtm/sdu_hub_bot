@@ -33,7 +33,7 @@ A = i18n.by_key("accounts")  # locales/<lang>.json, section "accounts"
 
 def texts_for(feature):
     """The module whose t() words the sign-in messages of this feature."""
-    return {"deadline": deadline, "assistant_moodle": deadline, "documents": docs, "login": login}.get(feature, grade)
+    return {"deadline": deadline, "assistant_moodle": deadline, "notify_moodle": deadline, "documents": docs, "login": login}.get(feature, grade)
 
 
 async def clear_login(update, context):
@@ -82,6 +82,12 @@ def step(callback):
                 await login.after_login(update, context)
             elif feature == "grade" and context.user_data.get("portal"):
                 await grade.show_after_sign_in(update, context)
+            if feature in ("notify_portal", "notify_moodle"):
+                from notifications_bot import cmd_notifications
+                import notifications
+
+                await cmd_notifications(update, context)
+                await notifications.check_now(context.application, update.effective_user.id)
             if feature in ("login", "assistant_portal", "assistant_moodle"):
                 from assistant_bot import resume  # a question waiting for this sign-in
                 await resume(update, context)
@@ -126,6 +132,20 @@ async def assistant_moodle(update, context):
     if context.user_data.get("moodle"):
         from assistant_bot import resume
         await resume(update, context)
+        return ConversationHandler.END
+    deadline._open_flow(update.effective_user.id)
+    await update.callback_query.edit_message_text(deadline.t("ask_user", bot.user_lang(update, context)))
+    return deadline.ASK_USER
+
+
+async def reminder_signin(update, context):
+    """Link an account directly from /notify without involving the AI."""
+    if update.callback_query.data == "notify:link_portal":
+        if context.user_data.get("portal"):
+            return ConversationHandler.END
+        await update.callback_query.edit_message_text(grade.t("ask_id", bot.user_lang(update, context)))
+        return grade.ASK_ID
+    if context.user_data.get("moodle"):
         return ConversationHandler.END
     deadline._open_flow(update.effective_user.id)
     await update.callback_query.edit_message_text(deadline.t("ask_user", bot.user_lang(update, context)))
@@ -210,6 +230,8 @@ def register_accounts(app):
     }
     app.add_handler(ConversationHandler(
         entry_points=[
+            CallbackQueryHandler(menu_entry("notify_portal", reminder_signin), pattern=r"^notify:link_portal$"),
+            CallbackQueryHandler(menu_entry("notify_moodle", reminder_signin), pattern=r"^notify:link_moodle$"),
             CallbackQueryHandler(menu_entry("grade", grade.cmd_grade), pattern=r"^menu:grade$"),
             CallbackQueryHandler(menu_entry("deadline", deadline.cmd_deadline), pattern=r"^menu:deadline$"),
             CallbackQueryHandler(menu_entry("documents", docs.cmd_documents), pattern=r"^menu:documents$"),

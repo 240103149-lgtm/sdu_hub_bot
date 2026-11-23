@@ -6,6 +6,7 @@ import hashlib
 import logging
 import os
 import time
+import weakref
 from datetime import datetime
 
 from telegram.error import Forbidden, TelegramError
@@ -20,15 +21,20 @@ import portal_schedule
 
 log = logging.getLogger(__name__)
 _limit = asyncio.Semaphore(5)
+_user_locks = weakref.WeakKeyDictionary()
 
 
 def enabled(data, key):
-    """Linked accounts enable reminders unless the student explicitly opts out."""
-    if key == "class_notifications":
-        default = bool(data.get("portal") or data.get("schedule_groups"))
-    else:
-        default = bool(data.get("moodle"))
-    return bool(data.get(key, default))
+    """Account linking alone does not subscribe a student to notifications."""
+    return bool(data.get(key, False))
+
+
+async def check_now(app, user_id):
+    """Catch up within the current window as soon as a student enables delivery."""
+    if os.getenv("REMINDERS_ENABLED", "on").lower() == "off":
+        return
+    await check_user(app, user_id, datetime.now(rooms.CAMPUS_TZ))
+    await app.update_persistence()
 
 
 async def personal_classes(data):
@@ -69,6 +75,14 @@ def deadline_key(item: moodle.Deadline) -> str:
 
 
 async def check_user(app, user_id: int, now: datetime) -> None:
+    # A settings click and the minute job can overlap; serialize one student's
+    # fetch/send/persist decisions so they cannot send the same event twice.
+    locks = _user_locks.setdefault(asyncio.get_running_loop(), {})
+    async with locks.setdefault(user_id, asyncio.Lock()):
+        await _check_user(app, user_id, now)
+
+
+async def _check_user(app, user_id: int, now: datetime) -> None:
     data = app.user_data[user_id]
     if data.get("reminders_blocked"):
         return
@@ -80,16 +94,21 @@ async def check_user(app, user_id: int, now: datetime) -> None:
         if sent[key] < stamp - 86400:
             del sent[key]
     messages = []
-    if enabled(data, "class_notifications"):
+    portal = data.get("portal")
+    if enabled(data, "class_notifications") and portal:
         try:
-            if data.get("portal"):
-                items = upcoming_personal(await personal_classes(data), now)
-            else:
-                items = student_schedule.upcoming(data.get("schedule_groups", []), now)
+            items = upcoming_personal(await personal_classes(data), now)
             for item in (items if enabled(data, "class_notifications") else []):
                 messages.append((item["key"], item["at"], labels["class_message"].format(
                     course=item["title"], time=item["start"], room=item["room"] or labels["tbc"])))
-        except (grade.PortalError, rooms.ScheduleError, OSError, ValueError):
+        except grade.PortalError as exc:
+            if exc.key == "session_expired" and data.get("portal") == portal:
+                data.pop("portal", None)
+                data.pop("personal_schedule_cache", None)
+                messages.append(("portal:expired", stamp, labels["portal_expired"]))
+            else:
+                log.warning("Class reminders skipped: MySDU unavailable")
+        except (rooms.ScheduleError, OSError, ValueError):
             log.warning("Class reminders skipped: timetable unavailable")
     session = data.get("moodle")
     if enabled(data, "deadline_notifications") and session:
@@ -114,7 +133,7 @@ async def check_user(app, user_id: int, now: datetime) -> None:
             else:
                 log.warning("Deadline reminders skipped: Moodle unavailable")
     for key, event_time, text in messages:
-        if key.startswith("class:") and not enabled(data, "class_notifications"):
+        if key.startswith("class:") and (not enabled(data, "class_notifications") or data.get("portal") != portal):
             continue
         if key.startswith("deadline:") and not enabled(data, "deadline_notifications"):
             continue

@@ -59,6 +59,10 @@ async def _get_telegram_app():
             await telegram_app.initialize()
             if telegram_app.post_init:
                 await telegram_app.post_init(telegram_app)
+            # A persistent webhook process must start the job queue even when
+            # initialized lazily rather than through ASGI lifespan.
+            if not IS_VERCEL:
+                await telegram_app.start()
             _telegram_app = telegram_app
     return _telegram_app
 
@@ -84,7 +88,8 @@ async def lifespan(app: FastAPI):
         from telegram import Update as TelegramUpdate
 
         telegram_app = await _get_telegram_app()
-        await telegram_app.start()
+        if not telegram_app.running:
+            await telegram_app.start()
         await telegram_app.bot.set_webhook(
             url=f"{WEBHOOK_BASE}{WEBHOOK_PATH}",
             secret_token=WEBHOOK_SECRET or None,

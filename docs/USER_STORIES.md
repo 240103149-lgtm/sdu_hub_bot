@@ -6,7 +6,7 @@ Updated: 23 November 2026. Existing US1–US13 numbering is retained; these addi
 | --- | --- | --- |
 | US4 — live campus events | As an SDU student, I want to discover university events from SDU Life so that I can take part in campus activities. | The bot and website show published titles, dates, campus-local times, venues, organizers and descriptions from the anonymous SDU Life homepage. Missing information is not guessed. Event details link to SDU Life; registration may require sign-in. Past events are hidden by default. A failed refresh is labelled when cached data is used. |
 | US14 — deadline reminder | As a student with linked Moodle, I want a reminder 12 hours before an assignment is due so that I have time to complete it. | The student enables deadline reminders in Account → Reminders. Within the last 12 hours the bot sends the course, task, due time and time remaining. No reminders are sent before this window or after the due time. Completed tasks disappear from Moodle's action-events feed. Opening events are excluded. Each due date is notified once; a changed due date creates a new reminder. Disabling reminders or unlinking Moodle stops future reminders. |
-| US15 — class reminder | As a student, I want my course and room 15 minutes before class so that I can get there on time. | The student explicitly selects their own course, teaching type and section. Adding a section enables class reminders. Only selected sections are used. Messages include the course, start time and room. No reminder is sent before the 15-minute window, after the class starts or outside the configured teaching term. Removing a section or disabling class reminders stops future messages. Different students' selections are isolated. |
+| US15 — class reminder | As a student, I want my course and room 15 minutes before class so that I can get there on time. | The student enables class reminders through /notify. Classes come only from the linked MySDU Course Schedule; no section picker or campus-export fallback is used. Messages include the course, start time and room. No reminder is sent before the 15-minute window, after the class starts or outside the configured teaching term. Unlinking MySDU or disabling class reminders stops future messages. Different students' accounts and preferences are isolated. |
 | Website — shared features | As a student, I want one clear place for university answers, events and my week so that I can plan without searching different pages. | Responsive Apple-inspired layout; three interface languages; keyboard-accessible navigation; live events with detail dialogs; working AI chat and registration guide; automatic account-backed MySDU timetable and Moodle deadlines; no manual course search or section picker. Samples on the homepage are labelled as previews. |
 
 ## Reminder setup
@@ -14,9 +14,9 @@ Updated: 23 November 2026. Existing US1–US13 numbering is retained; these addi
 1. Install the updated dependencies: `pip install -r requirements.txt`.
 2. Fill the existing `.env` with your own AI and Telegram credentials (see `env.example`).
 3. Run **one** persistent bot process: `python bot.py`. If the token already has a webhook, remove that webhook before switching to polling. Never run two polling instances for the same token.
-4. Open **Account → Reminders**, link Moodle and enable deadline reminders.
-5. Open **Account → My timetable** and search, for example, `/schedule CSS 217`. Add your actual theory and practice sections separately. The entire university export is not your personal timetable.
-6. Alternatively, ask “Show my timetable”, “Find CSS 217 sections” or “Show reminder settings”. These use assistant tools. Existing four-command Telegram menu is retained.
+4. Open `/notify` (also in the /start message and Telegram command menu). Link MySDU and Moodle using the buttons if needed. Accounts connected only on the website are separate from Telegram accounts.
+5. Enable class and/or deadline reminders. Each enable action checks for due reminders immediately; subsequent minute checks use the same deduplication. Linking an account alone does not opt the student in. No separate confirmation message is sent.
+6. `/schedule` shows the authenticated MySDU timetable or a sign-in button; no campus-section picker is shown. The five-command Telegram menu includes `/notify`.
 
 For a persistent webhook deployment, use the existing README webhook configuration and start:
 
@@ -26,9 +26,11 @@ uvicorn main:app --host 0.0.0.0 --port "$PORT"
 
 The application starts the same scheduler during its normal lifecycle. Do not additionally start `bot.py` with the same token. Set `REMINDERS_ENABLED=off` to disable the scheduler for an entire host.
 
-The scheduler checks every 60 seconds. Delivery can be delayed by up to a check interval plus Moodle/Telegram request latency. Enabling within a reminder window sends one catch-up reminder; it does not claim a full 12 hours or 15 minutes remain. Failed sends are retried within the remaining window. An expired Moodle session produces one relink notice. A Telegram block suspends that student's delivery until they open `/start` or explicitly enable reminders again.
+The scheduler checks every 60 seconds. Delivery can be delayed by up to a check interval plus Moodle/Telegram request latency. Enabling within a reminder window sends one catch-up reminder; it does not claim a full 12 hours or 15 minutes remain. Failed sends are retried within the remaining window. An expired MySDU or Moodle session produces one relink notice. A Telegram block suspends that student's delivery until they open `/start` or explicitly enable reminders again.
 
-`bot_state.pickle` stores selections, preferences, existing account sessions and sent-reminder identifiers. Set `BOT_STATE_PATH=/var/data/bot_state.pickle` (or your host's mounted volume path) to keep it on a persistent disk, restrict access to the service account and run a single bot instance. Do not commit it. Successful sends are persisted on each scheduler tick. A process crash between Telegram accepting a message and the disk write can cause a duplicate after restart; there is no exactly-once transaction across Telegram and local storage.
+`bot_state.pickle` stores preferences, existing account sessions and sent-reminder identifiers. Set `BOT_STATE_PATH=/var/data/bot_state.pickle` (or your host's mounted volume path) to keep it on a persistent disk, restrict access to the service account and run a single bot instance. Do not commit it. Successful sends are persisted on each scheduler tick. A process crash between Telegram accepting a message and the disk write can cause a duplicate after restart; there is no exactly-once transaction across Telegram and local storage.
+
+The settings card is intentionally short. It does not display hosting diagnostics or section-selection instructions. The On/Off buttons describe saved preferences; they cannot start infrastructure that is not running.
 
 ### Hosting boundary
 
@@ -55,6 +57,6 @@ python -m unittest discover -s tests -v
 node --check static/app.js
 ```
 
-The test harness disables live events and replaces Telegram, Moodle, the portal and AI services. New tests cover reminder boundaries, duplicate suppression, persisted state reload, next-week delivery, term expiry, failed-send retry, expired sessions, private routing, student isolation, section selection, website deep links, public APIs and event cache/parser failures. GitHub Actions runs these checks on pushes and pull requests.
+The test harness disables live events and replaces Telegram, Moodle, the portal and AI services. New tests cover reminder boundaries, duplicate suppression, persisted state reload, next-week delivery, term expiry, failed-send retry, expired sessions, private routing, student isolation, personal schedule sign-in, legacy deep links, immediate delivery from both accounts, public APIs and event cache/parser failures. GitHub Actions runs these checks on pushes and pull requests.
 
 Live Moodle login and actual Telegram delivery require credentials and must be checked on the deployment. Reading public SDU Life events is verified separately from the offline suite.

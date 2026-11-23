@@ -107,6 +107,8 @@ async def _forget(message) -> None:
 
 def _link(context: ContextTypes.DEFAULT_TYPE, student_id: str, cookies: dict[str, str]) -> None:
     context.user_data["portal"] = {"student_id": student_id, "cookies": cookies}
+    context.user_data.pop("personal_schedule_cache", None)
+    context.user_data.get("reminders_sent", {}).pop("portal:expired", None)
     login_guard.note_signed_in(context.user_data)
 
 

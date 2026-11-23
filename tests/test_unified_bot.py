@@ -292,7 +292,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.app.user_data[-100]['lang'] = 'kk'
         await self.update('/help')
         body = self.send.call_args.kwargs['text']
-        for name in ['start', 'account', 'lang', 'help']:
+        for name in ['start', 'account', 'notify', 'lang', 'help']:
             self.assertIn('/' + name + ' —', body)
         for old in ['/reset', '/unlink', '/grade', '/deadline']:
             self.assertNotIn(old, body)
@@ -334,11 +334,11 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.ai.await_count, 4)
         for lang in ['kk', 'ru', 'en']:
             names = [name for name, _ in telegram_bot.COMMAND_LABELS[lang]]
-            self.assertEqual(names, ['start', 'account', 'lang', 'help'])
+            self.assertEqual(names, ['start', 'account', 'notify', 'lang', 'help'])
 
-    async def test_menu_has_four_commands_and_old_commands_still_work(self):
+    async def test_menu_has_five_commands_and_old_commands_still_work(self):
         await telegram_bot._post_init(self.app)
-        self.assertEqual([c.command for c in self.set_commands.call_args.args[0]], ['start', 'account', 'lang', 'help'])
+        self.assertEqual([c.command for c in self.set_commands.call_args.args[0]], ['start', 'account', 'notify', 'lang', 'help'])
         # Hidden aliases are not removed: typing them still works.
         await self.update('/guide')
         await self.update('/reset')
@@ -407,7 +407,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
             await telegram_bot._post_init(self.app)
             staff = self.set_commands.call_args
             self.assertEqual(staff.kwargs['scope'].chat_id, 777)
-            self.assertEqual([c.command for c in staff.args[0]], ['start', 'account', 'lang', 'review', 'help'])
+            self.assertEqual([c.command for c in staff.args[0]], ['start', 'account', 'notify', 'lang', 'review', 'help'])
             self.assertNotIn('review', [c.command for c in telegram_bot.command_menu('en', 42)])
 
     async def test_account_shows_both_accounts_and_unlinks_from_a_button(self):

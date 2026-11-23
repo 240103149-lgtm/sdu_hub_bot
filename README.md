@@ -3,7 +3,7 @@
 ## 23.11.2026 — соңғы өзгерістер
 
 - **SDU Life ивенттері** бот пен сайтқа ортақ қосылды: ашық беттегі нақты күн, уақыт, орын, сипаттама және постер. Кэш — 5 минут; уақытша ақауда соңғы дерек 1 сағатқа дейін «ескірген» белгісімен көрсетіледі. Ботта ескі `campus_events.md` резерві сақталған.
-- **US14:** Moodle дедлайнына 12 сағат қалғанда Telegram ескертуі. **US15:** таңдалған сабаққа 15 минут қалғанда пән мен аудитория. Баптау: **Аккаунт → Ескертулер** немесе `/notify`. Жеке сабақ кестесі: **Аккаунт → Менің кестем** немесе «CSS 217 секцияларымды көрсет».
+- **US14:** Moodle дедлайнына 12 сағат қалғанда Telegram ескертуі. **US15:** MySDU-дағы жеке сабаққа 15 минут қалғанда пән мен аудитория. Баптау: **Аккаунт → Ескертулер** немесе `/notify`. Жеке сабақ кестесі: **Аккаунт → Менің кестем** немесе `/schedule`. Секцияны қолмен таңдау қажет емес.
 - **Apple стиліне жақын сайт:** жаңа басты бет, ассистент, тірі ивенттер, жеке апталық кесте, нұсқаулық; үш тіл және телефонға бейімделген. «Менің аптам» енді MySDU-дағы жеке сабақтар мен Moodle дедлайндарын аккаунтқа кіргеннен кейін автоматты жүктейді. Іздеу, секцияны қолмен қосу және браузерде жеке кесте құрастыру алынды.
 - **Ескертулерге тұрақты процесс қажет.** Сайттың қазіргі Vercel деплойы API мен бетті көрсетеді; Vercel-де фондық scheduler өшірулі. Автоматты ескертуді іске қосу үшін бір ғана `python bot.py` процесін немесе төмендегі тұрақты webhook хостын іске қосып, `bot_state.pickle` файлын тұрақты дискіде сақтаңыз. Жаңа тәуелділікті `pip install -r requirements.txt` арқылы орнатыңыз.
 
@@ -104,12 +104,12 @@ User story нөмірлері — Excel-дегі `main` парағының `#sto
 Командаларды теру міндетті емес: «Бағаларымды көрсет» немесе «Ертең 14-тен
 16-ға дейін бос аудитория бар ма?» деп жазсаңыз жеткілікті (3.1-бөлім).
 
-Telegram-дағы «/» мәзірінде тек 4 команда тұрады: `/start` (негізгі мәзір
+Telegram-дағы «/» мәзірінде 5 команда тұрады: `/start` (негізгі мәзір
 батырмалары), `/account` (порталға кіру, Moodle-ді байланыстыру, екеуінің
-байланысын өшіру), `/lang` және `/help` («🆕 Жаңа чат» батырмасымен, ол
+байланысын өшіру), `/notify` (ескертулер), `/lang` және `/help` («🆕 Жаңа чат» батырмасымен, ол
 `/reset`-тің орнына). Қабылдау комиссиясына (`DOCUMENTS_REVIEWER_IDS`) мәзірде
 `/review` те шығады. Төмендегі басқа командалар мәзірде көрсетілмейді, бірақ
-терсе бұрынғыдай жұмыс істейді. Жаңа функция жаңа команда қоспайды: ол AI
+терсе бұрынғыдай жұмыс істейді. Қалған функциялар үшін: ол AI
 ассистенттің жаңа құралы (tool) болады, керек болса `/start`-қа батырма қосылады.
 
 Жеке чатта хабарлама жолының астында тұрақты батырмалар бар (`/start`-пен
@@ -541,10 +541,13 @@ Commit/branch дереккөздері мен өзгерістер: [INTEGRATION
 ### Automatic personal timetable reminders
 
 A linked MySDU account now supplies the student's own Course Schedule for
-15-minute class reminders and the **My timetable** card. Manual campus-section
-selection remains available for students without a linked portal. Linked Moodle
-accounts enable 12-hour deadline reminders by default. An explicit Off preference
-is always respected. Toggle and timetable buttons edit the existing Telegram card
+15-minute class reminders and the **My timetable** card. There is no manual campus-section selection in the bot.
+The student explicitly enables class/deadline reminders with `/notify`.
+MySDU and Moodle connect buttons appear if the corresponding account is missing;
+signing in returns to the reminder settings. Website and Telegram account sessions
+remain separate. Enabling a reminder immediately checks for events already inside
+the 15-minute/12-hour window. The minute job continues checking afterwards on a
+persistent host, sharing duplicate suppression with the immediate check. Toggle and timetable buttons edit the existing Telegram card
 and acknowledge the callback silently.
 
 Delivery requires the existing continuously running scheduler. On Railway,
@@ -558,6 +561,7 @@ website may remain deployed independently with `TELEGRAM_MODE=off`.
 
 Vercel functions cannot keep the minute scheduler running, and their `/tmp`
 state does not survive reliably. Deploying this code to Vercel alone therefore
-**does not enable automatic delivery**. The paused-service message remains visible
-there until the bot runs on a persistent host. Do not remove that guard or run
+**does not enable automatic delivery**. The compact settings card saves preferences;
+an immediate check can run inside a request, but future timed delivery still needs
+a persistent host. A button showing On is a preference, not proof of a running scheduler. Do not remove that guard or run
 an independent cron against ephemeral state: reminders could be missed or repeated.

@@ -171,9 +171,9 @@ class TelegramToolbox:
         self.context.user_data["schedule_search"] = query
         card, keyboard = await notifications_bot.personal_schedule_card(self.context.user_data, lang, query)
         self.cards.append(Card(card, keyboard))
-        return assistant.ToolResult({"selected_sections": self.context.user_data.get("schedule_groups", []),
-                                     "note": "A linked portal supplies the personal timetable automatically; otherwise select sections."},
-                                    summary="[shown: personal timetable and section selection]")
+        return assistant.ToolResult({"portal_linked": bool(self.context.user_data.get("portal")),
+                                     "note": "Personal classes come from MySDU automatically. Never request section selection."},
+                                    summary="[shown: personal MySDU timetable or sign-in button]")
 
     async def tool_get_reminder_settings(self, args: dict, lang: str) -> assistant.ToolResult:
         if not self.private:

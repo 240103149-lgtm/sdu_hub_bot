@@ -16,8 +16,8 @@
     "source_label": "Source:"
   },
   "bot": {
-    "start": "Hi, {name}! 👋\n\nI'm **SDU Hub**, your student-life assistant.\n\n💬 **Just write what you need**, for example:\n“What is my grade in discrete math?”\n“Is there a free room tomorrow at 14:00?”\n“When does withdrawal end?”\n\nOr use the buttons under the message field 👇\n\n/account — sign in or unlink your accounts\n/lang — Қазақша / Русский / English\n/help — help",
-    "help": "**SDU Hub · Help**\n\n💬 You don't need commands: just ask in your own words. I can show:\n📊 your grades, also for one course\n📅 Moodle deadlines\n🚪 free rooms for a time you choose\n🎉 campus events\n📆 academic calendar dates\n📚 the course registration guide\n📄 enrollment documents\n\n**Commands**\n/start — main menu\n/account — sign in, link Moodle or unlink\n/lang — Қазақша / Русский / English\n/help — this help\n\nDuring a sign-in, /cancel stops it. “🆕 New chat” below clears the AI conversation.",
+    "start": "Hi, {name}! 👋\n\nI'm **SDU Hub**, your student-life assistant.\n\n💬 **Just write what you need**, for example:\n“What is my grade in discrete math?”\n“Is there a free room tomorrow at 14:00?”\n“When does withdrawal end?”\n\nOr use the buttons under the message field 👇\n\n/account — sign in or unlink your accounts\n/notify — class and deadline reminders\n/lang — Қазақша / Русский / English\n/help — help",
+    "help": "**SDU Hub · Help**\n\n💬 You don't need commands: just ask in your own words. I can show:\n📊 your grades, also for one course\n📅 Moodle deadlines\n🚪 free rooms for a time you choose\n🎉 campus events\n📆 academic calendar dates\n📚 the course registration guide\n📄 enrollment documents\n\n**Commands**\n/start — main menu\n/account — sign in, link Moodle or unlink\n/notify — class and deadline reminders\n/lang — Қазақша / Русский / English\n/help — this help\n\nDuring a sign-in, /cancel stops it. “🆕 New chat” below clears the AI conversation.",
     "choose_lang": "Choose a language:",
     "lang_set": "Language switched to English. Go ahead and ask.",
     "reset": "Conversation history cleared. You can ask a new question.",
@@ -38,7 +38,8 @@
     "reset": "Clear the conversation",
     "help": "Help",
     "account": "My account",
-    "review": "Documents to review"
+    "review": "Documents to review",
+    "notify": "Reminders"
   },
   "home": {
     "deadline": "📅 Deadlines",
@@ -513,8 +514,13 @@
     "session_expired": "🔐 Your Moodle session expired. Relink it in /account to resume deadline reminders.",
     "tbc": "To be confirmed",
     "service_paused": "Automatic reminders are currently paused for this bot. Your preferences are saved; delivery resumes when the reminder service is available.",
-    "portal_schedule": "Your MySDU timetable is used automatically for class reminders. You can switch reminders off below.",
-    "empty_portal_schedule": "Your MySDU timetable has no classes."
+    "portal_schedule": "Your personal MySDU timetable.",
+    "empty_portal_schedule": "Your MySDU timetable has no classes.",
+    "timing_short": "Remind me 15 minutes before class and 12 hours before a Moodle deadline.",
+    "connect_portal": "🔐 Connect MySDU",
+    "connect_moodle": "🔐 Connect Moodle",
+    "connect_for_schedule": "📚 Connect MySDU to load your personal timetable automatically.",
+    "portal_expired": "🔐 Your MySDU session expired. Reconnect through /notify to resume class reminders."
   },
   "life": {
     "title": "Campus, happening now.",

@@ -1,7 +1,5 @@
-"""Private notification settings and personal course-section selection."""
+"""Private reminders sourced only from the student's linked accounts."""
 from __future__ import annotations
-
-import os
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
@@ -11,7 +9,6 @@ import i18n
 import rooms
 import grade
 import notifications
-import student_schedule
 from telegram_bot import reply, user_lang
 
 
@@ -22,18 +19,15 @@ def labels(lang):
 def settings(data, lang):
     t = labels(lang)
     state = lambda key: t["on"] if notifications.enabled(data, key) else t["off"]
-    keyboard = InlineKeyboardMarkup([
+    keyboard = [
         [InlineKeyboardButton(f"{t['deadlines']} · {state('deadline_notifications')}", callback_data="notify:deadline")],
         [InlineKeyboardButton(f"{t['classes']} · {state('class_notifications')}", callback_data="notify:class")],
-        [InlineKeyboardButton(t["schedule"], callback_data="schedule:home")],
-    ])
-    text = t["settings"] + "\n\n" + t["timing"]
-    if os.getenv("VERCEL") or os.getenv("REMINDERS_ENABLED", "on").lower() == "off":
-        text += "\n\n" + t["service_paused"]
+    ]
+    if not data.get("portal"):
+        keyboard.append([InlineKeyboardButton(t["connect_portal"], callback_data="notify:link_portal")])
     if not data.get("moodle"):
-        text += "\n\n" + t["link_moodle"]
-    text += "\n\n" + (t["portal_schedule"] if data.get("portal") else t["choose_sections"])
-    return text, keyboard
+        keyboard.append([InlineKeyboardButton(t["connect_moodle"], callback_data="notify:link_moodle")])
+    return t["settings"] + "\n\n" + t["timing_short"], InlineKeyboardMarkup(keyboard)
 
 
 async def render_card(update, text, keyboard):
@@ -66,44 +60,24 @@ async def on_settings(update, context):
         context.user_data[key] = not notifications.enabled(context.user_data, key)
         context.user_data.pop("reminders_blocked", None)
     await cmd_notifications(update, context)
-
-
-def schedule_card(data, lang, query="", page=0):
-    t = labels(lang)
-    selected = data.get("schedule_groups", [])
-    groups = student_schedule.groups(query) if query else [g for g in student_schedule.groups() if g["id"] in selected]
-    lines = [t["schedule"], t["choose_sections"], "", t["search_hint"]]
-    info = student_schedule.term()
-    lines += ["", t["validity"].format(updated=info["updated"], end=info["valid_until"])]
-    if not groups:
-        lines += ["", t["no_sections"]]
-    keyboard = []
-    page = max(0, min(page, max(0, (len(groups) - 1) // 8)))
-    for group in groups[page * 8:(page + 1) * 8]:
-        chosen = group["id"] in selected
-        title = f"{group['course']} · {group['type']} · {group['section']}"
-        lines += ["", ("✓ " if chosen else "") + title]
-        lines += [f"{s['day']} {s['start']}–{s['end']} · {s['room']}" for s in group["sessions"]]
-        keyboard.append([InlineKeyboardButton((t["remove"] if chosen else t["add"]) + " " + title,
-                                              callback_data=f"schedule:toggle:{group['id']}")])
-    nav = []
-    if page:
-        nav.append(InlineKeyboardButton(t["previous"], callback_data=f"schedule:page:{page - 1}"))
-    if (page + 1) * 8 < len(groups):
-        nav.append(InlineKeyboardButton(t["next"], callback_data=f"schedule:page:{page + 1}"))
-    if nav:
-        keyboard.append(nav)
-    keyboard.append([InlineKeyboardButton(t["settings"], callback_data="notify:home")])
-    return "\n".join(lines), InlineKeyboardMarkup(keyboard)
+    if action in ("deadline", "class") and notifications.enabled(context.user_data, key):
+        await notifications.check_now(context.application, update.effective_user.id)
 
 
 async def personal_schedule_card(data, lang, query="", page=0):
-    if not data.get("portal"):
-        return schedule_card(data, lang, query, page)
     t = labels(lang)
+    if not data.get("portal"):
+        return t["connect_for_schedule"], InlineKeyboardMarkup([
+            [InlineKeyboardButton(t["connect_portal"], callback_data="notify:link_portal")],
+            [InlineKeyboardButton(t["settings"], callback_data="notify:home")],
+        ])
     try:
         items = await notifications.personal_classes(data)
-    except grade.PortalError:
+    except grade.PortalError as exc:
+        if exc.key == "session_expired":
+            data.pop("portal", None)
+            data.pop("personal_schedule_cache", None)
+            return await personal_schedule_card(data, lang, query, page)
         return t["unavailable"], InlineKeyboardMarkup([
             [InlineKeyboardButton(t["schedule"], callback_data="schedule:home")],
             [InlineKeyboardButton(t["settings"], callback_data="notify:home")],
@@ -153,22 +127,7 @@ async def on_schedule(update, context):
         query = ""
     elif parts[1] == "page" and parts[-1].isdigit():
         page = int(parts[-1])
-    elif parts[1] == "toggle":
-        key = parts[-1]
-        try:
-            if key not in {g["id"] for g in student_schedule.groups()}:
-                return
-        except rooms.ScheduleError:
-            await show_schedule(update, context)
-            return
-        selected = list(context.user_data.get("schedule_groups", []))
-        if key in selected:
-            selected.remove(key)
-        elif len(selected) < 40:
-            selected.append(key)
-            context.user_data["class_notifications"] = True
-            context.user_data.pop("reminders_blocked", None)
-        context.user_data["schedule_groups"] = selected
+    # Old section-selection buttons now open the personal timetable only.
     await show_schedule(update, context, query, page)
 
 
