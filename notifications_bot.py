@@ -4,10 +4,13 @@ from __future__ import annotations
 import os
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
 from telegram.ext import CallbackQueryHandler, CommandHandler, filters
 
 import i18n
 import rooms
+import grade
+import notifications
 import student_schedule
 from telegram_bot import reply, user_lang
 
@@ -18,7 +21,7 @@ def labels(lang):
 
 def settings(data, lang):
     t = labels(lang)
-    state = lambda key: t["on"] if data.get(key) else t["off"]
+    state = lambda key: t["on"] if notifications.enabled(data, key) else t["off"]
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"{t['deadlines']} · {state('deadline_notifications')}", callback_data="notify:deadline")],
         [InlineKeyboardButton(f"{t['classes']} · {state('class_notifications')}", callback_data="notify:class")],
@@ -29,9 +32,19 @@ def settings(data, lang):
         text += "\n\n" + t["service_paused"]
     if not data.get("moodle"):
         text += "\n\n" + t["link_moodle"]
-    if not data.get("schedule_groups"):
-        text += "\n\n" + t["choose_sections"]
+    text += "\n\n" + (t["portal_schedule"] if data.get("portal") else t["choose_sections"])
     return text, keyboard
+
+
+async def render_card(update, text, keyboard):
+    if update.callback_query:
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=keyboard)
+        except BadRequest as exc:
+            if "message is not modified" not in str(exc).lower():
+                raise
+    else:
+        await reply(update.effective_message, text, reply_markup=keyboard)
 
 
 async def cmd_notifications(update, context):
@@ -40,7 +53,7 @@ async def cmd_notifications(update, context):
         await reply(update.effective_message, labels(lang)["private"])
         return
     text, keyboard = settings(context.user_data, lang)
-    await reply(update.effective_message, text, reply_markup=keyboard)
+    await render_card(update, text, keyboard)
 
 
 async def on_settings(update, context):
@@ -50,7 +63,7 @@ async def on_settings(update, context):
     action = update.callback_query.data.split(":")[1]
     if action in ("deadline", "class"):
         key = "deadline_notifications" if action == "deadline" else "class_notifications"
-        context.user_data[key] = not context.user_data.get(key, False)
+        context.user_data[key] = not notifications.enabled(context.user_data, key)
         context.user_data.pop("reminders_blocked", None)
     await cmd_notifications(update, context)
 
@@ -84,6 +97,33 @@ def schedule_card(data, lang, query="", page=0):
     return "\n".join(lines), InlineKeyboardMarkup(keyboard)
 
 
+async def personal_schedule_card(data, lang, query="", page=0):
+    if not data.get("portal"):
+        return schedule_card(data, lang, query, page)
+    t = labels(lang)
+    try:
+        items = await notifications.personal_classes(data)
+    except grade.PortalError:
+        return t["unavailable"], InlineKeyboardMarkup([
+            [InlineKeyboardButton(t["schedule"], callback_data="schedule:home")],
+            [InlineKeyboardButton(t["settings"], callback_data="notify:home")],
+        ])
+    page = max(0, min(page, max(0, (len(items) - 1) // 8)))
+    lines = [t["schedule"], t["portal_schedule"]]
+    for item in items[page * 8:(page + 1) * 8]:
+        lines += ["", f"{item['day']} {item['start']}–{item.get('end') or '?'} · "
+                  f"{item.get('room') or t['tbc']}\n{item['course']} · {item['title']}"]
+    if not items:
+        lines += ["", t["empty_portal_schedule"]]
+    nav = []
+    if page:
+        nav.append(InlineKeyboardButton(t["previous"], callback_data=f"schedule:page:{page - 1}"))
+    if (page + 1) * 8 < len(items):
+        nav.append(InlineKeyboardButton(t["next"], callback_data=f"schedule:page:{page + 1}"))
+    keyboard = ([nav] if nav else []) + [[InlineKeyboardButton(t["settings"], callback_data="notify:home")]]
+    return "\n".join(lines), InlineKeyboardMarkup(keyboard)
+
+
 async def show_schedule(update, context, query="", page=0):
     lang = user_lang(update, context)
     if update.effective_chat.type != "private":
@@ -91,11 +131,11 @@ async def show_schedule(update, context, query="", page=0):
         return
     context.user_data["schedule_search"] = query[:100]
     try:
-        text, keyboard = schedule_card(context.user_data, lang, query, page)
+        text, keyboard = await personal_schedule_card(context.user_data, lang, query, page)
     except rooms.ScheduleError:
         await reply(update.effective_message, labels(lang)["unavailable"])
         return
-    await reply(update.effective_message, text, reply_markup=keyboard)
+    await render_card(update, text, keyboard)
 
 
 async def cmd_schedule(update, context):
