@@ -174,7 +174,7 @@ class ReminderRoutingTests(BotHarness):
             self.assertEqual(self.app.user_data[42]['schedule_groups'], [])
 
     async def test_buttons_edit_existing_card_without_confirmation_messages(self):
-        await self.text('/notifications')
+        await self.text('/notify')
         sent = self.send.await_count
         await self.tap('notify:class')
         self.assertEqual(self.send.await_count, sent)
@@ -209,7 +209,7 @@ class ReminderRoutingTests(BotHarness):
     async def test_reminders_exit_signin_and_group_cannot_change_settings(self):
         await self.text('/deadline')
         await self.tap('deadline:register')
-        await self.tap('notify:home')
+        await self.text('/notify')
         self.assertNotIn('login_flow', self.app.user_data[42])
         await self.tap('notify:deadline', user_id=-100, chat_type='group')
         self.assertNotIn('deadline_notifications', self.app.user_data[-100])
