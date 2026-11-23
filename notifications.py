@@ -102,10 +102,11 @@ async def _check_user(app, user_id: int, now: datetime) -> None:
                 messages.append((item["key"], item["at"], labels["class_message"].format(
                     course=item["title"], time=item["start"], room=item["room"] or labels["tbc"])))
         except grade.PortalError as exc:
-            if exc.key == "session_expired" and data.get("portal") == portal:
+            if exc.key in ("session_expired", "two_factor_required") and data.get("portal") == portal:
                 data.pop("portal", None)
                 data.pop("personal_schedule_cache", None)
-                messages.append(("portal:expired", stamp, labels["portal_expired"]))
+                text = labels["portal_two_factor_required"] if exc.key == "two_factor_required" else labels["portal_expired"]
+                messages.append(("portal:expired", stamp, text))
             else:
                 log.warning("Class reminders skipped: MySDU unavailable")
         except (rooms.ScheduleError, OSError, ValueError):

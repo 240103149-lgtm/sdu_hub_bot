@@ -196,7 +196,8 @@ async def my_week(request: Request, response: Response, week: date | None = None
         except grade.PortalError as exc:
             if exc.key == "session_expired":
                 clear_session(response, "mysdu")
-            return {"status": "expired" if exc.key == "session_expired" else "unavailable", "items": []}
+            status = {"session_expired": "expired", "two_factor_required": "code_required"}.get(exc.key, "unavailable")
+            return {"status": status, "error": exc.key, "items": []}
 
     async def deadlines():
         if not linked_moodle:

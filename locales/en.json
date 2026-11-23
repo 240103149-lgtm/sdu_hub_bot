@@ -106,7 +106,8 @@
     "retry_password": "Type the password here again (the message will be deleted). If the student number was wrong, tap the button.\nTo cancel: /cancel",
     "btn_change_id": "🔢 Change student number",
     "score": "Score",
-    "btn_all_grades": "📊 All grades"
+    "btn_all_grades": "📊 All grades",
+    "two_factor_required": "MySDU requires a verification code. Sign in again with /account to complete verification."
   },
   "deadline": {
     "need_link": "To see your deadlines, you need to link your Moodle account (moodle.sdu.edu.kz) to the bot. Do it now?",
@@ -556,7 +557,8 @@
     "connect_portal": "🔐 Connect MySDU",
     "connect_moodle": "🔐 Connect Moodle",
     "connect_for_schedule": "📚 Connect MySDU to load your personal timetable automatically.",
-    "portal_expired": "🔐 Your MySDU session expired. Reconnect through /notify to resume class reminders."
+    "portal_expired": "🔐 Your MySDU session expired. Reconnect through /notify to resume class reminders.",
+    "portal_two_factor_required": "MySDU requires a verification code. Sign in again with /account to complete verification."
   },
   "life": {
     "title": "Campus, happening now.",

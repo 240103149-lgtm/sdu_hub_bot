@@ -593,3 +593,20 @@ handles any required 2FA. See [docs/SDU_OAUTH.md](docs/SDU_OAUTH.md) for the exa
 registered callback/client ID, Vercel Redis requirements and the tested errors.
 The OAuth client currently requests only profile and schedule reads. The existing
 Telegram sign-in/client remains separate. Live OAuth sign-in was not verified.
+
+### MySDU verification before linking
+
+Native Telegram sign-in and the legacy website password endpoints now follow
+same-origin HTTP, meta-refresh and literal JavaScript redirects to MySDU's
+verification form. The observed `verification.php` form (a `code` input without
+an explicit type) is supported. Passwords and verification codes are posted,
+never put in URLs. A menu, session cookie or HTTP 200 is insufficient for success:
+the client must open and recognize the protected transcript after verification.
+If MySDU legitimately reuses a verified session, no new code is forced.
+
+Unknown/maintenance pages raise an availability error instead of empty grades
+or successful linking. A challenge on a previously saved session is reported
+explicitly and the student can sign in again; timetable reminders never use it
+as an empty schedule. Offline tests cover both Telegram and website responses.
+The university's browser sign-in and 2FA were observed successfully; the updated
+Telegram flow has not been tested with live student credentials.

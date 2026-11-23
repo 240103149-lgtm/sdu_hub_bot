@@ -74,10 +74,13 @@ async def personal_schedule_card(data, lang, query="", page=0):
     try:
         items = await notifications.personal_classes(data)
     except grade.PortalError as exc:
-        if exc.key == "session_expired":
+        if exc.key in ("session_expired", "two_factor_required"):
             data.pop("portal", None)
             data.pop("personal_schedule_cache", None)
-            return await personal_schedule_card(data, lang, query, page)
+            text, keyboard = await personal_schedule_card(data, lang, query, page)
+            if exc.key == "two_factor_required":
+                text = t["portal_two_factor_required"] + "\n\n" + text
+            return text, keyboard
         return t["unavailable"], InlineKeyboardMarkup([
             [InlineKeyboardButton(t["schedule"], callback_data="schedule:home")],
             [InlineKeyboardButton(t["settings"], callback_data="notify:home")],

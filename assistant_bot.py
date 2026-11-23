@@ -197,7 +197,7 @@ class TelegramToolbox:
         try:
             semesters = await grade_bot._load_semesters(self.context, self.user_id, force=True)
         except PortalError as exc:
-            if exc.key == "session_expired":  # sign in again, then this question is answered
+            if exc.key in ("session_expired", "two_factor_required"):  # sign in again, then answer
                 self.context.user_data.pop("portal", None)
                 grade_bot._CACHE.pop(self.user_id, None)
                 return assistant.ToolResult({}, auth="portal")

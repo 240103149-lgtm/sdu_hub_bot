@@ -25,8 +25,9 @@ import web_accounts
 LESSON = {'course': 'CSS 217', 'title': 'Software Architecture', 'day': 'Mo', 'start': '12:30',
           'end': '13:20', 'room': 'G107', 'section': '01-N', 'source': 'mysdu'}
 LOGIN = '<form method="post" action="/login"><input name="student"><input name="password" type="password"></form>'
-CODE = '<p>Verification code from email</p><form method="post" action="/verify"><input type="hidden" name="csrf" value="csrf-test"><input name="otp" type="text" autocomplete="one-time-code"></form>'
+CODE = '<p>Verification code from email</p><form method="post" action="verification.php"><input type="hidden" name="csrf" value="csrf-test"><input name="code" autocomplete="one-time-code"><button type="submit">Кодты растау</button></form>'
 DASHBOARD = '<h1>Student portal</h1><a href="/index.php?mod=personal-course-grid">Course Schedule</a>'
+TRANSCRIPT = '<table><tr><td>2026 - 2027. 1</td></tr><tr><td>CSS 217</td><td>Software Architecture</td><td>3</td><td>5</td><td>90</td><td>A</td><td>4</td><td>Passed</td></tr></table>'
 TABLE = '<table><tr><th>Day</th><th>Start</th><th>End</th><th>Course</th><th>Course title</th><th>Room</th><th>Section</th></tr><tr><td>Monday</td><td>12:30</td><td>13:20</td><td>CSS217</td><td>Software Architecture</td><td>G107</td><td>01-N</td></tr></table>'
 
 
@@ -122,12 +123,16 @@ class PersonalWeekApiTests(unittest.IsolatedAsyncioTestCase):
         real_login = grade.PortalLogin
         def respond(request):
             if request.method == 'GET':
+                if request.url.query == b'mod=transkript':
+                    self.assertIn('SID=verified', request.headers['cookie'])
+                    return httpx.Response(200, text=TRANSCRIPT)
                 return httpx.Response(200, text=LOGIN)
             data = parse_qs(request.content.decode())
             if request.url.path == '/login':
                 self.assertEqual(data['password'], ['test-password'])
                 return httpx.Response(200, text=CODE, headers={'set-cookie': 'SID=pending; Path=/'})
-            self.assertEqual(data['otp'], ['123456'])
+            self.assertEqual(request.url.path, '/verification.php')
+            self.assertEqual(data['code'], ['123456'])
             self.assertIn('SID=pending', request.headers['cookie'])
             return httpx.Response(200, text=DASHBOARD, headers={'set-cookie': 'SID=verified; Path=/'})
         with patch.object(grade, 'PortalLogin', side_effect=lambda: real_login(httpx.MockTransport(respond))):
@@ -145,6 +150,18 @@ class PersonalWeekApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data['mysdu']['items'][0]['date'], '2026-11-23')
         self.assertEqual(data['mysdu']['items'][0]['room'], 'G107')
         self.assertIsNone(self.client.cookies.get(web_accounts.PREFIX + 'pending'))
+
+    async def test_portal_menu_without_verified_records_cannot_set_connected_cookie(self):
+        real_login = grade.PortalLogin
+        def respond(request):
+            return httpx.Response(200, text=LOGIN if request.url.path == '/' else DASHBOARD,
+                                  headers={'set-cookie': 'SID=pending; Path=/'})
+        with patch.object(grade, 'PortalLogin', side_effect=lambda: real_login(httpx.MockTransport(respond))):
+            response = await self.client.post('/api/me/mysdu/login',
+                json={'username': '123', 'password': 'test-password'}, headers=self.headers)
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()['detail'], 'unavailable')
+        self.assertIsNone(self.client.cookies.get(web_accounts.PREFIX + 'mysdu'))
 
     async def test_partial_source_failure_preserves_other_data_and_week_boundary(self):
         self.set_session('mysdu', {'cookies': {'SID': 'test'}})

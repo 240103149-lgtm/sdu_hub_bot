@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from bs4 import BeautifulSoup
@@ -49,7 +49,7 @@ class PortalError(Exception):
     """A failure the bot can explain to the student.
 
     `key` is one of: bad_credentials, bad_code, unavailable, unexpected_page,
-    session_expired, session_lost, grades_not_configured.
+    session_expired, session_lost, two_factor_required, grades_not_configured.
     """
 
     def __init__(self, key: str) -> None:
@@ -90,11 +90,12 @@ def _find_login_form(soup: BeautifulSoup) -> Tag | None:
     return None
 
 
-def _authenticated_page(soup):
-    """A cookie or an HTTP 200 alone is not evidence of successful sign-in."""
-    links = ' '.join(str(a.get('href') or '') + ' ' + a.get_text(' ', strip=True) for a in soup.find_all('a')).casefold()
-    return any(marker in links for marker in ('logout', 'log out', 'sign out', 'mod=transkript',
-                                               'course schedule', 'system calendar', 'course registration'))
+def _has_portal_navigation(soup: BeautifulSoup) -> bool:
+    """A dashboard hint for the next read, never proof of authentication."""
+    links = " ".join(str(a.get("href") or "") + " " + a.get_text(" ", strip=True)
+                     for a in soup.find_all("a")).casefold()
+    return any(marker in links for marker in ("logout", "log out", "sign out", "mod=transkript",
+                                               "course schedule", "system calendar", "course registration"))
 
 
 def _find_code_form(soup: BeautifulSoup) -> Tag | None:
@@ -136,6 +137,66 @@ def _payload(form: Tag) -> dict[str, str]:
     return data
 
 
+def _same_portal(url: str) -> bool:
+    target, base = urlsplit(url), urlsplit(PORTAL_BASE)
+    return (target.scheme, target.netloc) == (base.scheme, base.netloc) and not target.username
+
+
+def _client_redirect(soup: BeautifulSoup) -> str | None:
+    """Read literal page redirects, without executing any JavaScript.
+
+    httpx follows HTTP redirects, but MySDU can also send a small redirect
+    document before verification.php. Menu links and conditional scripts are
+    deliberately not treated as redirects.
+    """
+    for meta in soup.find_all("meta"):
+        if str(meta.get("http-equiv", "")).casefold() == "refresh":
+            match = re.fullmatch(r"\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*['\"]?([^'\"<>]+?)['\"]?\s*",
+                                 str(meta.get("content", "")), re.I)
+            if match:
+                return match[1]
+    for script in soup.find_all("script", src=False):
+        match = re.fullmatch(
+            r"\s*(?:(?:window|document)\.)?location(?:\.href)?\s*=\s*(['\"])([^'\"\\<>]+)\1\s*;?\s*",
+            script.get_text(), re.I)
+        if not match:
+            match = re.fullmatch(
+                r"\s*(?:(?:window|document)\.)?location\.(?:replace|assign)\(\s*(['\"])([^'\"\\<>]+)\1\s*\)\s*;?\s*",
+                script.get_text(), re.I)
+        if match:
+            return match[2]
+    return None
+
+
+async def _portal_request(client: httpx.AsyncClient, method: str, url: str,
+                          data: dict[str, str] | None = None) -> httpx.Response:
+    """Bounded same-origin HTTP and literal HTML redirects, retaining cookies."""
+    for _ in range(8):
+        if not _same_portal(url):
+            raise PortalError("unexpected_page")
+        try:
+            response = await client.request(method, url, data=data, follow_redirects=False)
+        except httpx.HTTPError as exc:
+            raise PortalError("unavailable") from exc
+        if response.status_code >= 500:
+            raise PortalError("unavailable")
+        if response.status_code in (301, 302, 303, 307, 308):
+            location = response.headers.get("location")
+            if not location:
+                raise PortalError("unavailable")
+            url = urljoin(str(response.url), location)
+            if response.status_code == 303 or (response.status_code in (301, 302) and method == "POST"):
+                method, data = "GET", None
+            continue
+        soup = _soup(response.text)
+        location = None if _find_code_form(soup) is not None else _client_redirect(soup)
+        if location and response.is_success:
+            url, method, data = urljoin(str(response.url), location), "GET", None
+            continue
+        return response
+    raise PortalError("unavailable")
+
+
 # ------------------------------------------------------------------- login --
 
 
@@ -153,31 +214,42 @@ class PortalLogin:
     async def _submit(self, form: Tag, page_url: str, data: dict[str, str]) -> httpx.Response:
         action = urljoin(str(page_url), form.get("action") or "")
         # A form with a password must never be sent as GET (it would end up in the URL).
-        method = "post" if _has_password(form) else (form.get("method") or "get").lower()
-        try:
-            if method == "post":
-                response = await self.client.post(action, data=data)
-            else:
-                response = await self.client.get(action, params=data)
-        except httpx.HTTPError as exc:
-            raise PortalError("unavailable") from exc
-        if response.status_code >= 500:
-            raise PortalError("unavailable")
-        return response
+        # OTPs are credentials too. Never put either credential in a URL.
+        return await _portal_request(self.client, "POST", action, data)
+
+    async def _verify_access(self, response: httpx.Response, *, code_sent: bool) -> bool:
+        """Return True for a pending challenge; only protected data proves login."""
+        for protected in (False, True):
+            soup = _soup(response.text)
+            if response.status_code in (400, 401, 403, 422) or _find_login_form(soup) is not None:
+                key = "session_lost" if protected else ("bad_code" if code_sent else "bad_credentials")
+                raise PortalError(key)
+            if response.status_code >= 400:
+                raise PortalError("unavailable")
+            code_form = _find_code_form(soup)
+            if code_form is not None:
+                self._code_form, self._code_url = code_form, str(response.url)
+                if code_sent:
+                    raise PortalError("bad_code")
+                return True
+            if protected:
+                _checked_transcript(response)
+                if not self.cookies():
+                    raise PortalError("unavailable")
+                self._code_form = None
+                return False
+            if not _has_portal_navigation(soup) and not parse_transcript(soup):
+                raise PortalError("unavailable")
+            response = await _portal_request(self.client, "GET", GRADES_URL)
+        raise PortalError("unavailable")
 
     async def submit_credentials(self, student_id: str, password: str) -> bool:
         """Sign in. Returns True if the portal now wants the e-mail 2FA code."""
-        try:
-            page = await self.client.get(LOGIN_URL)
-        except httpx.HTTPError as exc:
-            raise PortalError("unavailable") from exc
-        if page.status_code >= 500:
-            raise PortalError("unavailable")
+        page = await _portal_request(self.client, "GET", LOGIN_URL)
 
         form = _find_login_form(_soup(page.text))
         if form is None:
-            print(f"[grade] no login form found at {page.url} (HTTP {page.status_code})")
-            raise PortalError("unexpected_page")
+            raise PortalError("unavailable")
 
         password_field = form.find("input", attrs={"type": "password"})
         id_field = _text_inputs(form)[0]
@@ -186,22 +258,7 @@ class PortalLogin:
         data[password_field["name"]] = password
 
         response = await self._submit(form, str(page.url), data)
-        if response.status_code in (401, 403):
-            raise PortalError("bad_credentials")
-
-        soup = _soup(response.text)
-        if _find_login_form(soup) is not None:
-            # Bounced back to the login page: wrong student number or password.
-            raise PortalError("bad_credentials")
-
-        code_form = _find_code_form(soup)
-        if code_form is not None:
-            self._code_form = code_form
-            self._code_url = str(response.url)
-            return True
-        if not _authenticated_page(soup):
-            raise PortalError("unavailable")
-        return False
+        return await self._verify_access(response, code_sent=False)
 
     async def submit_code(self, code: str) -> None:
         """Send the 2FA code from the e-mail. Raises PortalError("bad_code")
@@ -216,20 +273,7 @@ class PortalLogin:
         data[field["name"]] = code
 
         response = await self._submit(form, self._code_url, data)
-        if response.status_code in (400, 401, 403, 422):
-            raise PortalError("bad_code")
-
-        soup = _soup(response.text)
-        if _find_login_form(soup) is not None:
-            raise PortalError("bad_code")
-        again = _find_code_form(soup)
-        if again is not None:  # the portal is asking for the code once more
-            self._code_form = again
-            self._code_url = str(response.url)
-            raise PortalError("bad_code")
-        if not _authenticated_page(soup):
-            raise PortalError("unavailable")
-        self._code_form = None
+        await self._verify_access(response, code_sent=True)
 
     def cookies(self) -> dict[str, str]:
         """The portal session. Treat it like a password: it is what proves the
@@ -270,20 +314,9 @@ async def fetch_grades(
     async with httpx.AsyncClient(
         cookies=cookies, follow_redirects=True, timeout=TIMEOUT, headers=HEADERS, transport=transport
     ) as client:
-        try:
-            response = await client.get(GRADES_URL)
-        except httpx.HTTPError as exc:
-            raise PortalError("unavailable") from exc
-
-    if response.status_code in (401, 403):
-        raise PortalError("session_expired")
-    if response.status_code >= 500:
-        raise PortalError("unavailable")
-
-    soup = _soup(response.text)
-    if _find_login_form(soup) is not None:  # sent back to the login page
-        raise PortalError("session_expired")
-    return parse_grades(soup)
+        response = await _portal_request(client, "GET", GRADES_URL)
+    _checked_transcript(response)
+    return parse_grades(_soup(response.text))
 
 
 # -------------------------------------------------------------- transcript --
@@ -366,23 +399,31 @@ async def fetch_transcript(
     async with httpx.AsyncClient(
         cookies=cookies, follow_redirects=True, timeout=TIMEOUT, headers=HEADERS, transport=transport
     ) as client:
-        try:
-            response = await client.get(GRADES_URL)
-        except httpx.HTTPError as exc:
-            raise PortalError("unavailable") from exc
+        response = await _portal_request(client, "GET", GRADES_URL)
+    return _checked_transcript(response)
 
+
+def _checked_transcript(response: httpx.Response) -> list[Semester]:
+    """Distinguish real records (including an explicit empty state) from errors."""
     if response.status_code in (401, 403):
         raise PortalError("session_expired")
-    if response.status_code >= 500:
+    if response.status_code >= 400:
         raise PortalError("unavailable")
-
     soup = _soup(response.text)
-    if _find_login_form(soup) is not None:  # sent back to the login page
+    if _find_login_form(soup) is not None or response.text.startswith("#!"):
         raise PortalError("session_expired")
+    if _find_code_form(soup) is not None:
+        raise PortalError("two_factor_required")
     semesters = parse_transcript(soup)
-    if not semesters:
-        print(f"[grade] transcript page at {response.url} had no recognisable semesters")
-    return semesters
+    if semesters:
+        return semesters
+    # A missing/maintenance page must never look like an empty transcript.
+    heading = " ".join(tag.get_text(" ", strip=True) for tag in soup.find_all(["h1", "h2", "h3", "caption"]))
+    text = soup.get_text(" ", strip=True)
+    if (re.search(r"transcript|транскрипт", heading, re.I) and
+            re.search(r"no (?:academic records|courses|records)|нет (?:записей|данных)|академиялық жазбалар жоқ", text, re.I)):
+        return []
+    raise PortalError("unavailable")
 
 
 # ------------------------------------------------------------ one course --

@@ -494,7 +494,7 @@ async def _show_grades(update: Update, context: ContextTypes.DEFAULT_TYPE, lang:
         semesters = await _load_semesters(context, update.effective_user.id, force=True)
         page = await _page(semesters, len(semesters) - 1, lang) if semesters else None
     except PortalError as exc:
-        if exc.key == "session_expired":
+        if exc.key in ("session_expired", "two_factor_required"):
             context.user_data.pop("portal", None)
             _CACHE.pop(update.effective_user.id, None)
         text, retry = _records_error(exc, lang)
@@ -538,7 +538,7 @@ async def on_grade_nav(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             index = len(semesters) - 1 if arg in ("now", "retry") else min(int(arg), len(semesters) - 1)
             page = await _page(semesters, index, lang)
     except PortalError as exc:
-        if exc.key == "session_expired":
+        if exc.key in ("session_expired", "two_factor_required"):
             context.user_data.pop("portal", None)
             _CACHE.pop(update.effective_user.id, None)
         text, retry = _records_error(exc, lang)

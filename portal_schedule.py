@@ -191,10 +191,7 @@ async def fetch_schedule(cookies: dict, transport=None) -> list[dict]:
         for name, value in cookies.items():
             client.cookies.set(name, value, domain=urlsplit(grade.PORTAL_BASE).hostname, path="/")
         async def get(url):
-            try:
-                response = await client.get(url)
-            except httpx.HTTPError:
-                raise grade.PortalError("unavailable") from None
+            response = await grade._portal_request(client, "GET", url)
             soup = grade._soup(response.text)
             if not _same_portal(str(response.url)):
                 raise grade.PortalError("unexpected_page")
@@ -202,6 +199,8 @@ async def fetch_schedule(cookies: dict, transport=None) -> list[dict]:
                 raise grade.PortalError("session_expired")
             if response.status_code >= 400:
                 raise grade.PortalError("unavailable")
+            if grade._find_code_form(soup) is not None:
+                raise grade.PortalError("two_factor_required")
             return response
 
         home = await get(grade.PORTAL_BASE + "/")
