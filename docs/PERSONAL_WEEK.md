@@ -1,37 +1,65 @@
-# My week — automatic personal data
+# Personal month calendar
 
-The website's My week now connects directly to the student's MySDU and Moodle accounts. It has no course search, section picker, Add/Remove buttons or browser-local timetable. The public university export is never used as the student's own schedule.
+The website calendar now shows a full month instead of a weekly list. It reads
+only the visitor's own linked MySDU classes and native Moodle calendar. No
+campus-section picker or sample personal records are used.
 
 ## Student flow
 
-1. Open **My week** and connect **MySDU** using the student number and password. If MySDU asks for its email verification code, enter it in the second step.
-2. Connect **Moodle** with its own username and password.
-3. Classes and deadlines load together automatically. Previous week, this week, next week and refresh are the only timetable controls.
-4. Disconnect either account independently. The other account's data continues to work.
+1. Open My calendar and Connect MySDU. SDU Platform handles the university
+   login, consent and any 2FA in its own browser page. See `SDU_OAUTH.md` for
+   the registered callback, client ID and required server storage.
+2. Connect Moodle separately with the existing Moodle sign-in dialog.
+3. Navigate previous/current/next month. Select a day to read all of its
+   classes and tasks; on narrow screens the grid uses compact indicators.
+4. The default All filter includes completed tasks. Moodle completion states
+   are used for the Completed/Not completed filters. If tracking is unavailable,
+   the task is labelled Status unknown; elapsed deadlines never imply completion.
+5. Disconnect accounts independently. This also clears chat history and ignores
+   in-flight chat responses from the previous account context.
 
-Classes show the source, actual time, course and room. Moodle tasks show the source, course, task and due time. All dates use Asia/Almaty (UTC+5). An upstream failure or expired account is labelled separately; it is not shown as an empty timetable. No sample lessons are substituted for private data.
+All dates use Asia/Almaty. Source errors remain visible independently: MySDU
+unavailability does not erase valid Moodle records, and neither an outage nor a
+2FA challenge is treated as a successful connection or an empty personal schedule.
+The current Apple-inspired typography, quiet surfaces and blue controls are retained.
 
-## Data and sessions
+## Sessions and AI access
 
-- `portal_schedule.py` opens the authenticated MySDU homepage, follows its own **Course Schedule** navigation link on the same portal, and parses a personal list table or weekly grid, including row/column spans. It does not guess a protected URL or search the campus export. Missing end times and rooms are not invented. If the page format is not recognized, that source is unavailable.
-- `web_accounts.py` reuses the existing portal password/email-code and Moodle clients. Only session cookies/tokens are retained, encrypted with Fernet in HttpOnly, SameSite=Strict website cookies. HTTPS deployments also set Secure. Cookies are scoped to `/api/me`, have an eight-hour limit, and survive Vercel instance cold starts without a server-side database. Pending email-code state expires after ten minutes.
-- Set a stable, random `WEB_SESSION_SECRET` to use a separate website encryption secret. When omitted, a domain-specific key is derived from the existing `TELEGRAM_BOT_TOKEN`; the token is never exposed to the browser. Rotating the secret or bot token invalidates website connections.
-- Passwords and verification codes are not saved, logged, returned in API errors or sent to the AI assistant. Form fields are cleared after submission. Personal API responses use `Cache-Control: private, no-store`.
-- POSTs require the same-origin UI header; cross-origin requests are rejected and no CORS access is granted. Each browser retains only its own encrypted sessions. Disconnect clears that browser's connection; it does not log the student out of the upstream university service.
-- These website sessions are separate from Telegram account links and reminder subscriptions. Background notifications still require the persistent bot host described in `USER_STORIES.md`.
+New MySDU connections use server-side encrypted OAuth records with random opaque
+browser identifiers. Production Vercel needs durable Redis REST storage; no `/tmp`
+fallback is used. Native Moodle sessions still use encrypted HttpOnly SameSite=Strict
+cookies under `/api/me`. Legacy direct MySDU routes remain for compatibility/testing;
+the website does not render their password or 2FA form for Connect MySDU.
+
+`/api/me/chat` uses the same verified service facts as the bot and can read only
+this request's linked-account data when answering a relevant question. Account
+secrets are never sent to AI. `/api/chat` is limited to public service data.
+Private API responses use `private, no-store`, and state-changing requests and
+private chat require same-origin checks. Website account sessions remain separate
+from Telegram links and reminder preferences.
 
 ## API
 
 | Endpoint | Behavior |
 | --- | --- |
-| `GET /api/me/week?week=YYYY-MM-DD` | Monday–Sunday of the requested week; `mysdu` and `moodle` each have `status` and `items`. Status is `ready`, `disconnected`, `expired` or `unavailable`. |
-| `POST /api/me/mysdu/login` | Student credentials; returns `connected` or `code_required`. |
-| `POST /api/me/mysdu/code` | Completes the pending MySDU email-code challenge. |
-| `POST /api/me/moodle/login` | Connects Moodle independently. |
-| `POST /api/me/disconnect` | Clears the selected website account connection. |
+| `GET /api/me/month?month=YYYY-MM-DD` | Full month, independent source statuses and explicit completion values. |
+| `POST /api/me/sdu/connect` | Starts a visitor-bound PKCE flow; returns the provider authorization URL. |
+| `GET /api/me/sdu/callback` | Validates and consumes state once, then exchanges the code server-side. |
+| `POST /api/me/moodle/login` | Connects native Moodle. |
+| `POST /api/me/disconnect` | Revokes/removes the selected connection. |
+| `POST /api/me/chat` | Verified public facts and this visitor's authorized personal data. |
+| `GET /api/me/week` | Retained for backward compatibility; no longer used by the frontend. |
 
-Moodle requests use the selected week's exact timestamp range. MySDU exposes a recurring weekly grid, so weekday entries are placed in the requested week; ad hoc cancellations, vacations and semester changes depend on what the portal itself publishes. The existing public `/api/schedule` search endpoint remains for compatibility but is not called or displayed by My week.
+Moodle reads `core_calendar_get_calendar_monthly_view`, which includes activities
+that the action-events timeline omits after completion. Completion comes from
+`core_completion_get_activities_completion_status`. Limited Moodle function
+permissions are reflected as unavailable completion status, not invented results.
+MySDU publishes recurring weekday classes; ad hoc holidays/cancellations depend
+on what its source exposes. Public campus-export availability is not personal data.
 
-## Verification limits
+## Verification
 
-`tests/test_personal_week.py` uses scripted upstream HTTP and no real university credentials. It checks list/grid parsing, navigation discovery, password/email-code login across requests, encrypted and scoped cookies, expiry, disconnect, cross-site rejection, account isolation, partial upstream failures and exact Moodle week boundaries. It also checks that the website has no manual search or section picker. A real authenticated MySDU timetable cannot be verified without a student sign-in; a portal layout change must be checked against its authenticated page rather than guessed.
+Offline tests cover full-month ranges, repeated weekdays, source isolation,
+Moodle REST/AJAX calendar reads, deduplication, completion true/false/unknown,
+maintenance responses, OAuth/PKCE lifecycle, per-visitor access and API error states.
+No real student's SDU sign-in, 2FA or Moodle completion records were accessed.

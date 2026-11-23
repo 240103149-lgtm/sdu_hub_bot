@@ -1,0 +1,5 @@
+{
+  "client_id": "l_rLszJkrkLdXdz7m_TTrw",
+  "redirect_uri": "https://sdu-hub-bot.vercel.app/api/me/sdu/callback",
+  "scope": "profile:read schedule:read"
+}

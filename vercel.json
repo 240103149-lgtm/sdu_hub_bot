@@ -35,7 +35,11 @@
           "data/*.json",
           "locales/*.json",
           "static/**",
-          "knowledge/**"
+          "knowledge/**",
+          "service_data.py",
+          "web_assistant.py",
+          "sdu_oauth.py",
+          "sdu_oauth_client.json"
         ]
       }
     }

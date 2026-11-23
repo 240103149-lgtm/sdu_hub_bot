@@ -4,6 +4,9 @@
 
   const history = [];
   let busy = false;
+  let chatEpoch = 0;
+  let signInQuestion = null;
+  let oauthNotice = null;
   let guideLoaded = false;
   let lang = pickInitialLang();
 
@@ -101,6 +104,7 @@
   async function send(raw) {
     const text = raw.trim();
     if (!text || busy) return;
+    const epoch = chatEpoch;
     busy = true;
     sendBtn.disabled = true;
     $("empty").hidden = true;
@@ -112,17 +116,26 @@
     input.style.height = "auto";
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/me/chat", {
+        credentials: "same-origin",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-SDU-Hub": "1" },
         body: JSON.stringify({ message: text, history: history.slice(-10), lang }),
       });
       const data = await res.json();
+      if (epoch !== chatEpoch) return;
       if (!res.ok) throw new Error(data.detail || t("unknownError"));
       pending.classList.remove("pending");
       renderRich(pending, data.reply);
+      if (['mysdu', 'moodle'].includes(data.sign_in)) {
+        const signIn = el('button', 'text-button', t('accountSignIn') + ' · ' + (data.sign_in === 'mysdu' ? 'MySDU' : 'Moodle'));
+        signIn.type = 'button';
+        signIn.addEventListener('click', () => { signInQuestion = text; openAccount(data.sign_in); });
+        pending.append(signIn);
+      }
       history.push({ role: "user", text }, { role: "assistant", text: data.reply });
     } catch (err) {
+      if (epoch !== chatEpoch) return;
       pending.classList.remove("pending");
       pending.classList.add("error");
       renderRich(pending, err instanceof TypeError ? t("offline") : err.message);
@@ -354,7 +367,31 @@
     return `${day}.${month}.${year}`;
   }
   function accountMessage(status) {
-    return t(({ ready: 'accountConnected', disconnected: 'accountDisconnected', expired: 'accountExpired', unavailable: 'accountUnavailable' })[status] || 'accountDisconnected');
+    return t(({ ready: 'accountConnected', disconnected: 'accountDisconnected', expired: 'accountExpired', unavailable: 'accountUnavailable', code_required: 'portalCodeRequired', permission_required: 'portalPermissionRequired', not_configured: 'oauthStorageRequired' })[status] || 'accountDisconnected');
+  }
+  let taskFilter = 'all';
+  function monthEntries() {
+    const lessons = taskFilter === 'completed' ? [] : weekData?.mysdu?.items || [];
+    const deadlines = (weekData?.moodle?.items || []).filter(item => taskFilter === 'all' || (taskFilter === 'completed' ? item.completed === true : item.completed !== true));
+    return [...lessons, ...deadlines].map(item => ({ ...item, date: item.source === 'moodle' ? item.due.slice(0, 10) : item.date,
+      sort: item.source === 'moodle' ? item.due.slice(11, 16) : item.start }));
+  }
+  function openCalendarDay(dateKey) {
+    const detail = $('calendar-detail'); detail.replaceChildren(); detail.hidden = false;
+    detail.append(el('h3', '', new Intl.DateTimeFormat(lang === 'kk' ? 'kk-KZ' : lang, { dateStyle: 'full', timeZone: 'UTC' }).format(new Date(dateKey + 'T12:00:00Z'))));
+    const entries = monthEntries().filter(item => item.date === dateKey).sort((a, b) => a.sort.localeCompare(b.sort));
+    if (!entries.length) detail.append(el('p', 'caption', t(['mysdu', 'moodle'].some(source => weekData?.[source]?.status === 'unavailable') ? 'weekSourceError' : 'calendarDayEmpty')));
+    entries.forEach(item => {
+      const card = el('article', 'lesson' + (item.source === 'moodle' ? ' deadline-lesson' : '') + (item.completed === true ? ' completed-lesson' : ''));
+      card.append(el('span', 'source-label', item.source === 'moodle' ? 'Moodle' : 'MySDU'), el('time', '', item.sort), el('strong', '', item.title || item.course));
+      if (item.title !== item.course) card.append(el('p', '', item.course));
+      if (item.source === 'mysdu') card.append(el('p', '', item.room || t('eventVenue')));
+      if (item.source === 'moodle') {
+        const status = item.completed === true ? 'taskCompleted' : item.completed === false ? 'taskPending' : 'taskUnknown';
+        card.append(el('span', 'task-status ' + (item.completed === true ? 'done' : ''), (item.completed === true ? '✓ ' : '') + t(status)));
+      }
+      detail.append(card);
+    });
   }
   function renderWeek() {
     const connections = $('week-accounts'); connections.replaceChildren();
@@ -367,45 +404,44 @@
       action.addEventListener('click', () => status === 'ready' || status === 'unavailable' ? disconnectAccount(account) : openAccount(account));
       card.append(info, action); connections.append(card);
     });
-    if (weekData) $('week-range').textContent = formatDate(weekData.week_start) + ' – ' + formatDate(weekData.week_end);
-    $('week-status').textContent = weekBusy ? t('weekLoading') : weekError ? t('weekLoadError') : '';
+    const firstKey = weekData?.month_start || requestedWeek || new Date().toISOString().slice(0, 7) + '-01';
+    const first = new Date(firstKey + 'T12:00:00Z');
+    $('week-range').textContent = new Intl.DateTimeFormat(lang === 'kk' ? 'kk-KZ' : lang, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(first);
+    const errors = ['mysdu', 'moodle'].filter(account => ['unavailable', 'code_required', 'permission_required', 'not_configured'].includes(weekData?.[account]?.status)).map(account => weekData[account].status === 'not_configured' ? t('oauthStorageRequired') : weekData[account].status === 'code_required' ? t('portalCodeRequired') : weekData[account].status === 'permission_required' ? t('portalPermissionRequired') : t('sourceUnavailable').replace('{source}', account === 'mysdu' ? 'MySDU' : 'Moodle'));
+    if (oauthNotice) errors.push(oauthNotice);
+    $('week-status').textContent = weekBusy ? t('weekLoading') : weekError ? t('weekLoadError') : errors.join(' ');
+    $('week-status').classList.toggle('source-error', errors.length > 0 || weekError);
     ['previous-week', 'current-week', 'next-week', 'refresh-week'].forEach(id => { $(id).disabled = weekBusy; });
-    const week = $('my-week'); week.replaceChildren();
-    if (!weekData) { if (!weekBusy) week.append(el('p', 'empty-state', t('weekConnect'))); return; }
-    const lessons = weekData.mysdu.items || [], deadlines = weekData.moodle.items || [];
-    if (!lessons.length && !deadlines.length) {
-      const connected = weekData.mysdu.status === 'ready' || weekData.moodle.status === 'ready';
-      const failed = ['expired', 'unavailable'].some(status => weekData.mysdu.status === status || weekData.moodle.status === status);
-      week.append(el('p', 'empty-state', t(failed ? 'weekSourceError' : connected ? 'weekEmpty' : 'weekConnect')));
-      return;
+    const grid = $('my-week'); grid.replaceChildren();
+    const heading = el('div', 'calendar-weekdays');
+    for (let i = 0; i < 7; i++) heading.append(el('span', '', new Intl.DateTimeFormat(lang === 'kk' ? 'kk-KZ' : lang, { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 10, 23 + i)))));
+    grid.append(heading);
+    const cells = el('div', 'calendar-cells'); grid.append(cells);
+    const offset = (first.getUTCDay() + 6) % 7;
+    for (let i = 0; i < offset; i++) cells.append(el('div', 'calendar-day outside'));
+    const count = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+    const entries = monthEntries();
+    for (let day = 1; day <= count; day++) {
+      const dateKey = firstKey.slice(0, 7) + '-' + String(day).padStart(2, '0');
+      const items = entries.filter(item => item.date === dateKey).sort((a, b) => a.sort.localeCompare(b.sort));
+      const cell = el('button', 'calendar-day' + (dateKey === weekData?.today ? ' today' : ''));
+      cell.type = 'button'; cell.setAttribute('aria-label', formatDate(dateKey) + ' · ' + items.length + ' ' + t('calendarEntries'));
+      cell.append(el('span', 'calendar-number', String(day)));
+      items.slice(0, 3).forEach(item => cell.append(el('span', 'calendar-item ' + (item.source === 'moodle' ? 'deadline' : 'class') + (item.completed === true ? ' done' : ''),
+        (item.completed === true ? '✓ ' : '') + item.sort + ' ' + (item.title || item.course))));
+      if (items.length) cell.append(el('span', 'calendar-count', String(items.length)));
+      if (items.length > 3) cell.append(el('span', 'calendar-more', '+' + (items.length - 3)));
+      cell.addEventListener('click', () => openCalendarDay(dateKey)); cells.append(cell);
     }
-    const monday = new Date(weekData.week_start + 'T00:00:00Z');
-    days.forEach((day, index) => {
-      const date = new Date(monday); date.setUTCDate(date.getUTCDate() + index);
-      const dateKey = date.toISOString().slice(0, 10);
-      const entries = [
-        ...lessons.filter(item => item.date === dateKey).map(item => ({ ...item, sort: item.start })),
-        ...deadlines.filter(item => item.due.slice(0, 10) === dateKey).map(item => ({ ...item, sort: item.due.slice(11, 16) }))
-      ].sort((a, b) => a.sort.localeCompare(b.sort));
-      if (!entries.length) return;
-      const column = el('section', 'day-card' + (dateKey === weekData.today ? ' today' : ''));
-      column.append(el('h3', '', t(dayKeys[index])), el('p', 'day-date caption', formatDate(dateKey)));
-      entries.forEach(item => {
-        const lesson = el('article', 'lesson' + (item.source === 'moodle' ? ' deadline-lesson' : ''));
-        const time = item.source === 'moodle' ? t('weekDue') + ' ' + item.sort : item.start + (item.end ? '–' + item.end : '');
-        lesson.append(el('span', 'source-label', item.source === 'moodle' ? 'Moodle' : 'MySDU'), el('time', '', time), el('strong', '', item.title || item.course));
-        if (item.title !== item.course) lesson.append(el('p', '', item.course));
-        if (item.source === 'mysdu') lesson.append(el('p', '', item.room || t('eventVenue')));
-        column.append(lesson);
-      });
-      week.append(column);
-    });
+    while (cells.children.length % 7) cells.append(el('div', 'calendar-day outside'));
+    $('calendar-detail').hidden = true;
+    document.querySelectorAll('[data-task-filter]').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.taskFilter === taskFilter)); });
   }
   async function loadWeek() {
     const sequence = ++weekSequence;
     weekBusy = true; weekError = false; renderWeek();
     try {
-      const response = await fetch('/api/me/week' + (requestedWeek ? '?week=' + encodeURIComponent(requestedWeek) : ''), { cache: 'no-store', credentials: 'same-origin' });
+      const response = await fetch('/api/me/month' + (requestedWeek ? '?month=' + encodeURIComponent(requestedWeek) : ''), { cache: 'no-store', credentials: 'same-origin' });
       if (!response.ok) throw new Error();
       const data = await response.json();
       if (sequence !== weekSequence) return;
@@ -414,10 +450,11 @@
     finally { if (sequence === weekSequence) { weekBusy = false; renderWeek(); } }
   }
   function moveWeek(direction) {
-    if (!weekData) return;
-    const date = new Date(weekData.week_start + 'T00:00:00Z'); date.setUTCDate(date.getUTCDate() + direction * 7);
+    const first = weekData?.month_start || requestedWeek || new Date().toISOString().slice(0, 7) + '-01';
+    const date = new Date(first + 'T12:00:00Z'); date.setUTCMonth(date.getUTCMonth() + direction);
     requestedWeek = date.toISOString().slice(0, 10); loadWeek();
   }
+  document.querySelectorAll('[data-task-filter]').forEach(button => button.addEventListener('click', () => { taskFilter = button.dataset.taskFilter; renderWeek(); }));
   $('previous-week').addEventListener('click', () => moveWeek(-1));
   $('next-week').addEventListener('click', () => moveWeek(1));
   $('current-week').addEventListener('click', () => { requestedWeek = null; loadWeek(); });
@@ -434,7 +471,19 @@
     $('account-submit').disabled = authBusy;
     $('close-account').setAttribute('aria-label', t('dismiss'));
   }
-  function openAccount(account) {
+  async function openAccount(account) {
+    if (account === 'mysdu') {
+      oauthNotice = null;
+      try {
+        const response = await fetch('/api/me/sdu/connect', { method: 'POST', credentials: 'same-origin', headers: { 'X-SDU-Hub': '1' } });
+        const data = await response.json();
+        if (!response.ok) throw new Error(t(data.detail === 'oauth_storage_not_configured' ? 'oauthStorageRequired' : data.detail === 'accounts_not_configured' ? 'accountNotConfigured' : 'accountUnavailable'));
+        const target = new URL(data.authorization_url);
+        if (target.origin !== 'https://api-sdu.javazhan.tech') throw new Error(t('accountUnavailable'));
+        window.location.assign(target.href);
+      } catch (error) { $('week-status').textContent = error.message || t('accountUnavailable'); $('week-status').classList.add('source-error'); }
+      return;
+    }
     activeAccount = account; authPhase = 'credentials'; $('account-form').reset(); $('account-error').textContent = '';
     renderAccountDialog(); $('account-dialog').showModal(); $('account-username').focus();
   }
@@ -457,7 +506,7 @@
         throw new Error(t(key));
       }
       if (data.status === 'code_required') { authPhase = 'code'; renderAccountDialog(); $('account-code').focus(); }
-      else { $('account-dialog').close(); await loadWeek(); }
+      else { $('account-dialog').close(); await loadWeek(); clearChat(); const question = signInQuestion; signInQuestion = null; if (question) send(question); }
     } catch (error) { $('account-error').textContent = error instanceof TypeError ? t('weekLoadError') : error.message; }
     finally { payload.password = ''; payload.code = ''; authBusy = false; renderAccountDialog(); }
   });
@@ -465,13 +514,12 @@
     try {
       const response = await fetch('/api/me/disconnect', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-SDU-Hub': '1' }, body: JSON.stringify({ account }) });
       if (!response.ok) throw new Error();
+      signInQuestion = null; clearChat();
       await loadWeek();
     } catch { $('week-status').textContent = t('weekLoadError'); }
   }
-  $('new-chat').addEventListener('click', () => {
-    if (busy) return;
-    history.length = 0; thread.replaceChildren(); $('empty').hidden = false; input.focus();
-  });
+  function clearChat() { chatEpoch++; history.length = 0; thread.replaceChildren(); $('empty').hidden = false; }
+  $('new-chat').addEventListener('click', () => { if (!busy) { signInQuestion = null; clearChat(); input.focus(); } });
   $('navigation').addEventListener('keydown', event => {
     const tabs = [...document.querySelectorAll('.tab')];
     const index = tabs.indexOf(document.activeElement);
@@ -480,6 +528,8 @@
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
     tabs[next].focus(); showTab(tabs[next].dataset.view);
   });
+  const oauthResult = new URLSearchParams(window.location.search).get('sdu');
+  if (oauthResult) { showTab('schedule'); if (oauthResult === 'denied') oauthNotice = t('oauthDenied'); window.history.replaceState(null, '', window.location.pathname); }
   applyLang();
   updateBotLinks();
   loadEvents();

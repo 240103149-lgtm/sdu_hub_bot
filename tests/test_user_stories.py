@@ -436,7 +436,7 @@ class US5GradesTests(BotHarness):
         failing = AsyncMock(side_effect=grade_bot.PortalError('unavailable'))
         with patch.object(grade_bot.grade, 'fetch_transcript', new=failing):
             await self.text('/grade')
-        self.assertEqual(self.last_text(), 'Academic records are temporarily unavailable. Please try again.')
+        self.assertEqual(self.last_text(), 'MySDU is temporarily unavailable. Please try again later.')
         self.assertEqual(self.last_buttons(), [[('🔄 Retry', 'gr:retry')]])
         self.assertIn('portal', self.app.user_data[42])  # a failure does not sign the student out
         grade_bot._CACHE[42] = (time.monotonic(), [])  # an older, empty result must not be reused

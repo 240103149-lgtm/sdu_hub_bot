@@ -199,7 +199,7 @@ AI-ға **ешқашан** түспейді; AI чатта пароль сұра
 керек, әйтпесе «Connection error». Tool қолданылса, модель екі рет шақырылады,
 ал портал мен Moodle-ден дерек жүктеу олардың өз timeout-тарымен шектеледі.
 
-Сайттағы чат (`POST /api/chat`) білім қорынан жауап береді. «Менің аптам» бөлек қорғалған аккаунт сессияларын қолданады: MySDU сабақтары мен Moodle дедлайндары AI чатына жіберілмейді.
+Сайттағы чат енді ортақ AI құралдарын қолданады: тірі ивенттер, асхана, нұсқаулық, бос аудиториялар және құжаттар тізімі. `/api/me/chat` тек осы браузерде байланыстырылған аккаунттың сабақтарын, бағаларын және Moodle дедлайндарын сұраққа қажет болғанда оқиды. AI-ға пароль, код, cookie немесе токен берілмейді. Аккаунттан шыққанда чат тарихы тазарады. `/api/chat` жеке аккаунттарды оқымайды.
 
 ## 4. Сайтты іске қосу
 
@@ -565,3 +565,31 @@ state does not survive reliably. Deploying this code to Vercel alone therefore
 an immediate check can run inside a request, but future timed delivery still needs
 a persistent host. A button showing On is a preference, not proof of a running scheduler. Do not remove that guard or run
 an independent cron against ephemeral state: reminders could be missed or repeated.
+
+
+### Assistant service access
+
+The shared assistant can query full SDU Life event facts (including descriptions,
+organizers, source links and named past events), real timetable rows, the canteen
+menu, connection status and the complete approved registration guide. Tool results
+are verified sources alongside the knowledge base. Website chat uses the same
+service clients through `/api/me/chat`, with encrypted account cookies scoped to
+that visitor and same-origin checks. `/api/chat` remains public-data-only.
+Missing accounts open the existing secure sign-in dialog; account secrets never
+reach the model. No private data is returned from another user's session.
+
+### Full-month calendar and SDU Platform sign-in
+
+The website now displays the entire selected month, with previous/current/next
+month navigation and a mobile-friendly day detail panel. Moodle events are read
+from its monthly calendar rather than the incomplete action-events feed.
+Completed activities stay visible. Completion is confirmed using Moodle's
+completion records; a past due date is never treated as completed, and unavailable
+completion tracking is labelled unknown. Sources fail independently: a MySDU
+outage remains an explicit error while Moodle data can still be displayed.
+
+The website's Connect MySDU button now uses SDU Platform OAuth/PKCE; the provider
+handles any required 2FA. See [docs/SDU_OAUTH.md](docs/SDU_OAUTH.md) for the exact
+registered callback/client ID, Vercel Redis requirements and the tested errors.
+The OAuth client currently requests only profile and schedule reads. The existing
+Telegram sign-in/client remains separate. Live OAuth sign-in was not verified.

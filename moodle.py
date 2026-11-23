@@ -64,6 +64,8 @@ class Deadline:
     due: int  # unix timestamp
     url: str = ""
     kind: str = ""  # Moodle event type: "due", "close", ...
+    completed: bool | None = None
+    event_id: int | None = None
 
 
 # ------------------------------------------------------------------- login --
@@ -224,7 +226,10 @@ def parse_events(events: list[dict]) -> list[Deadline]:
     for event in events:
         if not isinstance(event, dict):
             continue
-        due = int(event.get("timesort") or event.get("timestart") or 0)
+        try:
+            due = int(event.get("timesort") or event.get("timestart") or 0)
+        except (TypeError, ValueError):
+            raise MoodleError("unexpected_page") from None
         if not due:
             continue
         course = event.get("course") or {}
@@ -267,3 +272,100 @@ async def fetch_deadlines(session: dict, transport: httpx.AsyncBaseTransport | N
         except httpx.HTTPError as exc:
             raise MoodleError("unavailable") from exc
     return parse_events(events)
+
+
+async def _service(client, session, function, args):
+    """Read an official Moodle web-service/AJAX function, without password reuse."""
+    if session.get('mode') == 'token' and session.get('token'):
+        response = await client.post(f'{MOODLE_BASE}/webservice/rest/server.php', data={
+            'wstoken': session['token'], 'wsfunction': function, 'moodlewsrestformat': 'json', **args})
+        if response.status_code >= 500:
+            raise MoodleError("unavailable")
+        data = _json(response)
+        error = data if isinstance(data, dict) and (data.get('exception') or data.get('errorcode')) else None
+    elif session.get('mode') == 'web' and session.get('sesskey'):
+        response = await client.post(f'{MOODLE_BASE}/lib/ajax/service.php',
+            params={'sesskey': session['sesskey'], 'info': function},
+            json=[{'index': 0, 'methodname': function, 'args': args}])
+        if response.status_code >= 500:
+            raise MoodleError("unavailable")
+        payload = _json(response)
+        if not isinstance(payload, list) or not payload:
+            raise MoodleError('unexpected_page')
+        error = payload[0].get('exception') if payload[0].get('error') else None
+        data = payload[0].get('data')
+    else:
+        raise MoodleError('session_expired')
+    if response.status_code >= 500:
+        raise MoodleError('unavailable')
+    if response.status_code in (401, 403):
+        raise MoodleError('session_expired')
+    if error:
+        code = str(error.get('errorcode') or '')
+        raise MoodleError('session_expired' if code in DEAD_SESSION_CODES else 'unexpected_page')
+    return data
+
+
+async def fetch_month(session: dict, year: int, month: int, transport=None) -> list[Deadline]:
+    """The full Moodle calendar, including activities omitted from the action feed.
+
+    Completion is taken only from Moodle's completion records. Missing permission
+    or disabled tracking means unknown; an elapsed deadline never means completed.
+    """
+    from urllib.parse import urlparse, parse_qs
+    if not 2000 <= year <= 2100 or not 1 <= month <= 12:
+        raise ValueError('invalid month')
+    cookies = session.get('cookies') if session.get('mode') == 'web' else None
+    async with _client(transport, cookies) as client:
+        try:
+            payload = await _service(client, session, 'core_calendar_get_calendar_monthly_view',
+                                     {'year': year, 'month': month, 'courseid': 0, 'mini': 0, 'day': 1})
+            if not isinstance(payload, dict) or not isinstance(payload.get('weeks'), list):
+                raise MoodleError('unexpected_page')
+            raw = [event for week in payload['weeks'] for day in week.get('days', []) for event in day.get('events', [])]
+            events = {int(event['id']): event for event in raw if isinstance(event, dict) and str(event.get('id', '')).isdigit()}
+            result = []
+            lookup = {}
+            for event_id, event in events.items():
+                parsed = parse_events([event])
+                if not parsed:
+                    continue
+                item = parsed[0]
+                item.event_id = event_id
+                course = event.get('course') or {}
+                course_id = course.get('id') if isinstance(course, dict) else None
+                cmid = event.get('instance') if event.get('modulename') else None
+                if not cmid:
+                    cmid = (parse_qs(urlparse(item.url).query).get('id') or [None])[0]
+                if str(cmid or '').isdigit() and str(course_id or '').isdigit():
+                    lookup[event_id] = (int(course_id), int(cmid))
+                result.append(item)
+            if not lookup:
+                return sorted(result, key=lambda item: item.due)
+            try:
+                site = await _service(client, session, 'core_webservice_get_site_info', {})
+                user_id = int(site['userid'])
+            except MoodleError as exc:
+                if exc.key == 'session_expired':
+                    raise
+                return sorted(result, key=lambda item: item.due)
+            except (TypeError, KeyError, ValueError):
+                return sorted(result, key=lambda item: item.due)
+            completion = {}
+            for course_id in {course_id for course_id, _ in lookup.values()}:
+                try:
+                    records = await _service(client, session, 'core_completion_get_activities_completion_status',
+                                             {'courseid': course_id, 'userid': user_id})
+                    for status in records.get('statuses', []):
+                        if str(status.get('tracking', '')) in ('1', '2') and str(status.get('state', '')) in ('0', '1', '2', '3') and str(status.get('cmid', '')).isdigit():
+                            completion[(course_id, int(status['cmid']))] = int(status['state']) != 0
+                except MoodleError as exc:
+                    if exc.key == 'session_expired':
+                        raise
+                    # Calendar stays visible if completion is not exposed by this Moodle installation.
+                    continue
+            for item in result:
+                item.completed = completion.get(lookup.get(item.event_id))
+            return sorted(result, key=lambda item: item.due)
+        except httpx.HTTPError as exc:
+            raise MoodleError('unavailable') from exc

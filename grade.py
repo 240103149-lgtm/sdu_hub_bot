@@ -90,6 +90,13 @@ def _find_login_form(soup: BeautifulSoup) -> Tag | None:
     return None
 
 
+def _authenticated_page(soup):
+    """A cookie or an HTTP 200 alone is not evidence of successful sign-in."""
+    links = ' '.join(str(a.get('href') or '') + ' ' + a.get_text(' ', strip=True) for a in soup.find_all('a')).casefold()
+    return any(marker in links for marker in ('logout', 'log out', 'sign out', 'mod=transkript',
+                                               'course schedule', 'system calendar', 'course registration'))
+
+
 def _find_code_form(soup: BeautifulSoup) -> Tag | None:
     """The 'enter the code we e-mailed you' form, or None.
 
@@ -192,6 +199,8 @@ class PortalLogin:
             self._code_form = code_form
             self._code_url = str(response.url)
             return True
+        if not _authenticated_page(soup):
+            raise PortalError("unavailable")
         return False
 
     async def submit_code(self, code: str) -> None:
@@ -218,6 +227,8 @@ class PortalLogin:
             self._code_form = again
             self._code_url = str(response.url)
             raise PortalError("bad_code")
+        if not _authenticated_page(soup):
+            raise PortalError("unavailable")
         self._code_form = None
 
     def cookies(self) -> dict[str, str]:

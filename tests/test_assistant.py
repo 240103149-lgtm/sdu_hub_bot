@@ -58,6 +58,9 @@ class ScriptedModel:
             def add_results(self, results):
                 model.results.append(results)
 
+            def add_facts(self, results):
+                model.results.append(results)
+
         return Chat()
 
     def everything_seen(self):

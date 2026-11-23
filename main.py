@@ -16,7 +16,7 @@ import json
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse
@@ -29,6 +29,7 @@ import campus_events
 import rooms
 import student_schedule
 import web_accounts
+import sdu_oauth
 
 TELEGRAM_MODE = os.getenv("TELEGRAM_MODE", "off").strip().lower()  # off | webhook
 WEBHOOK_BASE = os.getenv("TELEGRAM_WEBHOOK_URL", "").strip().rstrip("/")
@@ -113,6 +114,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="University AI Knowledge Hub", lifespan=lifespan)
 app.include_router(web_accounts.router)
+app.include_router(sdu_oauth.router)
 
 
 @app.exception_handler(RequestValidationError)
@@ -181,14 +183,25 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/api/chat")
-def chat(req: ChatRequest):
-    """US5: answer one free-text question from the approved knowledge base."""
-    lang = core.normalize_lang(req.lang)
+async def chat(req: ChatRequest):
+    """Public service tools and approved knowledge, without personal sessions."""
+    import web_assistant
     try:
-        reply = core.answer(req.message, [m.model_dump() for m in req.history], lang)
+        return await web_assistant.answer(req.message, [m.model_dump() for m in req.history], core.normalize_lang(req.lang))
     except core.AssistantError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.localized(lang))
-    return {"reply": reply}
+        raise HTTPException(status_code=exc.status_code, detail=exc.localized(req.lang)) from None
+
+
+@app.post("/api/me/chat")
+async def personal_chat(req: ChatRequest, request: Request, response: Response):
+    """Same-origin chat with access only to this visitor's own linked accounts."""
+    import web_assistant
+    web_accounts.same_origin(request)
+    try:
+        return await web_assistant.answer(req.message, [m.model_dump() for m in req.history],
+                                          core.normalize_lang(req.lang), request, response)
+    except core.AssistantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.localized(req.lang)) from None
 
 
 @app.get("/api/guide", response_class=PlainTextResponse)

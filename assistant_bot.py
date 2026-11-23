@@ -53,6 +53,7 @@ import i18n
 import login_guard
 import moodle
 import rooms
+import service_data
 import rooms_bot
 from grade import PortalError
 from moodle import MoodleError
@@ -171,7 +172,9 @@ class TelegramToolbox:
         self.context.user_data["schedule_search"] = query
         card, keyboard = await notifications_bot.personal_schedule_card(self.context.user_data, lang, query)
         self.cards.append(Card(card, keyboard))
+        items = await notifications_bot.notifications.personal_classes(self.context.user_data) if self.context.user_data.get("portal") else []
         return assistant.ToolResult({"portal_linked": bool(self.context.user_data.get("portal")),
+                                     "classes": items, "timezone": "Asia/Almaty",
                                      "note": "Personal classes come from MySDU automatically. Never request section selection."},
                                     summary="[shown: personal MySDU timetable or sign-in button]")
 
@@ -345,12 +348,15 @@ class TelegramToolbox:
             start, end = start or end, end or start
             if start and end and end < start:
                 start, end = end, start
-            card, keyboard = events_bot.live_card(feed, lang, start, end)
+            data = service_data.event_facts(feed, args)
+            selected = service_data.event_rows(feed, args)
+            if selected and (args.get("query") or args.get("event_id") is not None):
+                days = [datetime.fromisoformat(item["date"]).astimezone(rooms.CAMPUS_TZ).date() for item in selected]
+                start, end = min(days), max(days)
+            card, keyboard = events_bot.live_card({**feed, "events": selected}, lang, start, end)
             self.cards.append(Card(card, keyboard))
-            events = campus_events.select(feed["events"], datetime.now(rooms.CAMPUS_TZ).date(), start, end)
-            return assistant.ToolResult({"events": [{k: e[k] for k in ("title", "date", "venue", "url")} for e in events[:15]],
-                                         "source": feed["source"], "stale": feed["stale"]},
-                                        summary=f"[shown: {len(events[:15])} SDU Life campus events]")
+            return assistant.ToolResult(data, summary="[shown: SDU Life events: " + "; ".join(
+                f"{event['id']} {event['title']} ({event['date']}), {event['venue']}" for event in data["events"][:5]) + "]")
         except campus_events.FeedError:
             pass
         labels = events_bot.TEXTS[lang]
@@ -371,7 +377,14 @@ class TelegramToolbox:
         self.cards.append(Card(i18n.section(lang, "life")["fallback"] + "\n\n" + events_bot.render_events(source, lang, start=start, end=end),
                                events_bot.details_keyboard(source, start, end)))
         today = datetime.now(rooms.CAMPUS_TZ).date()
-        events = events_bot.visible(events_bot.parse_events(source), today, start, end)
+        parsed = events_bot.parse_events(source)
+        query = str(args.get("query") or "").strip().casefold()
+        events = parsed if query and not (start or end) else events_bot.visible(parsed, today, start, end)
+        if query:
+            events = [event for event in events if all(word in (event.title + " " + event.body).casefold() for word in query.split())]
+        if args.get("event_id") is not None:
+            # An SDU Life id must never be resolved against unrelated curated ids.
+            return assistant.ToolResult({"error": "Live SDU Life details are temporarily unavailable for this event."})
 
         def status(event) -> str:
             if event.status != "scheduled":
@@ -382,7 +395,8 @@ class TelegramToolbox:
 
         data = {"today": today.isoformat(), "source": "Curated campus_events.md; live SDU Life feed unavailable", "events": [
             {"title": e.title, "date": e.start.isoformat() if e.start else None, "time": e.time,
-             "venue": "see the program" if e.venue == "program" else e.venue, "status": status(e)}
+             "venue": "see the program" if e.venue == "program" else e.venue, "status": status(e),
+             "description": e.body}
             for e in events
         ]}
         return assistant.ToolResult(data, summary=f"[shown: campus events, {len(events)}]")
@@ -400,7 +414,7 @@ class TelegramToolbox:
         # The card is a short summary with [📄 Full guide] (a file) and the portal button.
         self.cards.append(Card(bot_text("guide_short", lang), guide_keyboard(lang)))
         return assistant.ToolResult({"shown": "a short summary of the registration guide, with a button "
-                                              "that sends the full guide as a file", "portal": PORTAL_URL},
+                                              "that sends the full guide as a file", "guide": guide, "portal": PORTAL_URL},
                                     summary="[shown: the short registration guide and the full-guide button]")
 
     async def tool_get_required_documents(self, args: dict, lang: str) -> assistant.ToolResult:
@@ -440,6 +454,19 @@ class TelegramToolbox:
                                  for doc in catalog.for_track(tr) if not doc.required],
                 } for tr in tracks}}
         return assistant.ToolResult(data, summary="[shown: the official list of enrollment documents]")
+
+    async def tool_get_canteen_menu(self, args: dict, lang: str) -> assistant.ToolResult:
+        import canteen
+        data = service_data.menu_data(args, lang)
+        if not args.get("query"):
+            self.cards += [Card(page) for page in canteen.render_places(lang)]
+        return assistant.ToolResult(data, summary="[shown: approved canteen menu and prices]")
+
+    async def tool_get_account_status(self, args: dict, lang: str) -> assistant.ToolResult:
+        if not self.private:
+            return self._private_only(lang)
+        return assistant.ToolResult({"mysdu_connected": bool(self.context.user_data.get("portal")),
+                                     "moodle_connected": bool(self.context.user_data.get("moodle"))})
 
     async def tool_canteen_order_total(self, args: dict, lang: str) -> assistant.ToolResult:
         import canteen

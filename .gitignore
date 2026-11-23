@@ -7,3 +7,6 @@ venv/
 .vercel
 # US8: submitted documents are personal data - never commit the database
 data/documents.db*
+
+# Server-side OAuth tokens and attempts
+data/oauth.db*

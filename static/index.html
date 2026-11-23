@@ -18,7 +18,7 @@
    <button class="tab" id="tab-home" data-view="home" role="tab" aria-controls="panel-home" aria-selected="true" data-i18n="navHome">Overview</button>
    <button class="tab" id="tab-chat" data-view="chat" role="tab" aria-controls="panel-chat" aria-selected="false" data-i18n="navChat">Assistant</button>
    <button class="tab" id="tab-events" data-view="events" role="tab" aria-controls="panel-events" aria-selected="false" data-i18n="navEvents">Campus</button>
-   <button class="tab" id="tab-schedule" data-view="schedule" role="tab" aria-controls="panel-schedule" aria-selected="false" data-i18n="navSchedule">My week</button>
+   <button class="tab" id="tab-schedule" data-view="schedule" role="tab" aria-controls="panel-schedule" aria-selected="false" data-i18n="navSchedule">My calendar</button>
    <button class="tab" id="tab-guide" data-view="guide" role="tab" aria-controls="panel-guide" aria-selected="false" data-i18n="navGuide">Guide</button>
   </nav>
   <div class="langs" role="group" aria-label="Language">
@@ -66,12 +66,13 @@
  </section>
  <section class="panel" id="panel-events" role="tabpanel" aria-labelledby="tab-events"><div class="page-heading wrap"><p class="eyebrow" data-i18n="campusLabel">Life beyond the lecture.</p><h1 data-i18n="lifeTitle">Campus, happening now.</h1><p data-i18n="campusText">Discover what’s happening across SDU.</p></div><div class="wrap events-page"><div class="event-controls"><div class="segmented"><button id="events-upcoming" aria-pressed="true" data-i18n="upcoming">Upcoming</button><button id="events-all" aria-pressed="false" data-i18n="allPublished">All published</button></div><button id="refresh-events" class="text-button" data-i18n="refresh">Refresh</button></div><p id="events-status" class="muted" role="status"></p><div class="events-grid" id="all-events" aria-live="polite"></div><p class="caption" data-i18n="eventSource">Events from SDU Life. Registration may require your SDU account.</p></div></section>
  <section class="panel personal-week" id="panel-schedule" role="tabpanel" aria-labelledby="tab-schedule">
-  <div class="page-heading wrap"><p class="eyebrow" data-i18n="navSchedule">My week</p><h1 data-i18n="scheduleTitle">Your week. In sync.</h1><p data-i18n="scheduleText">Your MySDU classes and Moodle deadlines, together.</p></div>
+  <div class="page-heading wrap"><p class="eyebrow" data-i18n="navSchedule">My calendar</p><h1 data-i18n="scheduleTitle">Your month. In one place.</h1><p data-i18n="scheduleText">Your MySDU classes and Moodle deadlines, together.</p></div>
   <div class="wrap schedule-page">
    <div id="week-accounts" class="account-connections"></div>
-   <div class="week-header"><div><h2 id="week-range"></h2><p class="caption">Asia/Almaty · UTC+5</p></div><div class="week-navigation"><button id="previous-week" class="text-button" data-i18n="previousWeek">Previous week</button><button id="current-week" class="text-button" data-i18n="currentWeek">This week</button><button id="next-week" class="text-button" data-i18n="nextWeek">Next week</button><button id="refresh-week" class="button secondary small" data-i18n="refresh">Refresh</button></div></div>
+   <div class="week-header"><div><h2 id="week-range"></h2><p class="caption">Asia/Almaty · UTC+5</p></div><div class="week-navigation"><button id="previous-week" class="text-button" data-i18n="previousWeek">Previous month</button><button id="current-week" class="text-button" data-i18n="currentWeek">This month</button><button id="next-week" class="text-button" data-i18n="nextWeek">Next month</button><button id="refresh-week" class="button secondary small" data-i18n="refresh">Refresh</button></div></div>
    <p id="week-status" class="week-status muted" role="status"></p>
-   <div class="week-grid" id="my-week" aria-live="polite"></div>
+   <div class="calendar-filters segmented" role="group" aria-label="Task status"><button data-task-filter="all" aria-pressed="true" data-i18n="calendarAll">All</button><button data-task-filter="pending" aria-pressed="false" data-i18n="taskPending">Not completed</button><button data-task-filter="completed" aria-pressed="false" data-i18n="taskCompleted">Completed</button></div>
+   <div class="month-calendar" id="my-week" aria-live="polite"></div><section id="calendar-detail" class="calendar-detail" hidden></section>
   </div>
  </section>
  <section class="panel" id="panel-guide" role="tabpanel" aria-labelledby="tab-guide"><div class="page-heading wrap"><p class="eyebrow" data-i18n="navGuide">Guide</p><h1 data-i18n="guideTitle">Your next semester.&#10;Step by step.</h1></div><div class="guide wrap"><div class="guide-body" id="guide-body"></div></div></section>

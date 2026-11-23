@@ -168,6 +168,8 @@ async def disconnect(body: Disconnect, request: Request, response: Response):
     same_origin(request)
     clear_session(response, body.account)
     if body.account == "mysdu":
+        import sdu_oauth
+        await sdu_oauth.disconnect(request, response)
         clear_session(response, "pending")
     return {"status": "disconnected"}
 
@@ -214,3 +216,76 @@ async def my_week(request: Request, response: Response, week: date | None = None
     mysdu, tasks = await asyncio.gather(schedule(), deadlines())
     return {"week_start": first.isoformat(), "week_end": (last - timedelta(days=1)).isoformat(),
             "today": today.isoformat(), "timezone": "Asia/Almaty", "mysdu": mysdu, "moodle": tasks}
+
+
+async def portal_session(request):
+    import sdu_oauth
+    linked = await sdu_oauth.session(request)
+    return linked or read_session(request, 'mysdu')
+
+
+async def portal_classes(session):
+    if session.get('mode') == 'oauth':
+        import sdu_oauth
+        return await sdu_oauth.schedule(session)
+    return await portal_schedule.fetch_schedule(session.get('cookies') or {})
+
+
+async def portal_grades(session):
+    if session.get('mode') == 'oauth':
+        import sdu_oauth
+        return await sdu_oauth.transcript(session)
+    return await grade.fetch_transcript(session.get('cookies') or {})
+
+
+@router.get('/month')
+async def my_month(request: Request, response: Response, month: date | None = None):
+    """A full calendar month; sources fail independently and completion is explicit."""
+    import calendar
+    today = datetime.now(rooms.CAMPUS_TZ).date()
+    first = (month or today).replace(day=1)
+    if not 2000 <= first.year <= 2100 or abs((first - today).days) > 732:
+        raise HTTPException(422, detail='invalid_month')
+    last = first.replace(day=calendar.monthrange(first.year, first.month)[1])
+    linked_moodle = read_session(request, 'moodle')
+
+    async def classes():
+        try:
+            portal = await portal_session(request)
+            if not portal:
+                return {'status': 'disconnected', 'items': []}
+            rows = await portal_classes(portal)
+            dated = []
+            for offset in range(last.day):
+                day = first + timedelta(days=offset)
+                dated += [{**row, 'date': day.isoformat()} for row in rows if row['day'] == rooms.DAYS[day.weekday()]]
+            return {'status': 'ready', 'items': dated, 'synced_at': datetime.now(rooms.CAMPUS_TZ).isoformat()}
+        except (grade.PortalError, HTTPException) as exc:
+            reason = exc.key if isinstance(exc, grade.PortalError) else str(exc.detail)
+            if reason == 'session_expired':
+                clear_session(response, 'mysdu')
+            status = {'session_expired': 'expired', 'two_factor_required': 'code_required', 'permission_denied': 'permission_required', 'oauth_storage_not_configured': 'not_configured'}.get(reason, 'unavailable')
+            return {'status': status, 'error': reason, 'items': []}
+
+    async def tasks():
+        if not linked_moodle:
+            return {'status': 'disconnected', 'items': []}
+        try:
+            rows = await moodle.fetch_month(linked_moodle, first.year, first.month)
+            items = []
+            for row in rows:
+                due = datetime.fromtimestamp(row.due, rooms.CAMPUS_TZ)
+                if first <= due.date() <= last:
+                    items.append({'id': row.event_id, 'course': row.course, 'title': row.title,
+                                  'due': due.isoformat(), 'source': 'moodle', 'kind': row.kind,
+                                  'completed': row.completed, 'url': row.url})
+            return {'status': 'ready', 'items': items, 'synced_at': datetime.now(rooms.CAMPUS_TZ).isoformat()}
+        except moodle.MoodleError as exc:
+            if exc.key == 'session_expired':
+                clear_session(response, 'moodle')
+            return {'status': 'expired' if exc.key == 'session_expired' else 'unavailable',
+                    'error': exc.key, 'items': []}
+
+    mysdu, tasks = await asyncio.gather(classes(), tasks())
+    return {'month_start': first.isoformat(), 'month_end': last.isoformat(), 'today': today.isoformat(),
+            'timezone': 'Asia/Almaty', 'mysdu': mysdu, 'moodle': tasks}
