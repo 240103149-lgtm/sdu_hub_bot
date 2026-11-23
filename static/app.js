@@ -405,7 +405,7 @@
       action.addEventListener('click', () => status === 'ready' || status === 'unavailable' ? disconnectAccount(account) : openAccount(account));
       card.append(info, action); connections.append(card);
     });
-    const firstKey = weekData?.month_start || requestedWeek || new Date().toISOString().slice(0, 7) + '-01';
+    const firstKey = weekData?.month_start || requestedWeek || campusDay(Date.now()).slice(0, 7) + '-01';
     const first = new Date(firstKey + 'T12:00:00Z');
     $('week-range').textContent = t('calendarMonths')[first.getUTCMonth()] + ' ' + first.getUTCFullYear();
     const errors = ['mysdu', 'moodle'].filter(account => ['unavailable', 'code_required', 'permission_required', 'not_configured'].includes(weekData?.[account]?.status)).map(account => weekData[account].status === 'not_configured' ? t('oauthStorageRequired') : weekData[account].status === 'code_required' ? t('portalCodeRequired') : weekData[account].status === 'permission_required' ? t('portalPermissionRequired') : t('sourceUnavailable').replace('{source}', account === 'mysdu' ? 'MySDU' : 'Moodle'));
@@ -451,7 +451,7 @@
     finally { if (sequence === weekSequence) { weekBusy = false; renderWeek(); } }
   }
   function moveWeek(direction) {
-    const first = weekData?.month_start || requestedWeek || new Date().toISOString().slice(0, 7) + '-01';
+    const first = weekData?.month_start || requestedWeek || campusDay(Date.now()).slice(0, 7) + '-01';
     const date = new Date(first + 'T12:00:00Z'); date.setUTCMonth(date.getUTCMonth() + direction);
     requestedWeek = date.toISOString().slice(0, 10); loadWeek();
   }

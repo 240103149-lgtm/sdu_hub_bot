@@ -191,7 +191,8 @@ async def my_week(request: Request, response: Response, week: date | None = None
             return {"status": "disconnected", "items": []}
         try:
             items = await portal_schedule.fetch_schedule(portal.get("cookies") or {})
-            dated = [{**item, "date": (first + timedelta(days=rooms.DAYS.index(item["day"]))).isoformat()} for item in items]
+            dated = [{**item, "date": (first + timedelta(days=rooms.DAYS.index(item["day"]))).isoformat()} for item in items
+                     if teaching_day(first + timedelta(days=rooms.DAYS.index(item["day"])))]
             return {"status": "ready", "items": dated, "synced_at": datetime.now(rooms.CAMPUS_TZ).isoformat()}
         except grade.PortalError as exc:
             if exc.key == "session_expired":
@@ -217,6 +218,16 @@ async def my_week(request: Request, response: Response, week: date | None = None
     mysdu, tasks = await asyncio.gather(schedule(), deadlines())
     return {"week_start": first.isoformat(), "week_end": (last - timedelta(days=1)).isoformat(),
             "today": today.isoformat(), "timezone": "Asia/Almaty", "mysdu": mysdu, "moodle": tasks}
+
+
+def teaching_day(day: date) -> bool:
+    """Classes take place on this date: within the semester's teaching weeks
+    (data/schedule_meta.json, the same dates the class reminders use)."""
+    import student_schedule
+    try:
+        return student_schedule.active(day)
+    except (OSError, ValueError, KeyError):
+        return True  # unknown term dates: show the timetable as the portal gives it
 
 
 async def portal_session(request):
@@ -259,6 +270,8 @@ async def my_month(request: Request, response: Response, month: date | None = No
             dated = []
             for offset in range(last.day):
                 day = first + timedelta(days=offset)
+                if not teaching_day(day):
+                    continue  # the weekly timetable does not repeat outside the semester
                 dated += [{**row, 'date': day.isoformat()} for row in rows if row['day'] == rooms.DAYS[day.weekday()]]
             return {'status': 'ready', 'items': dated, 'synced_at': datetime.now(rooms.CAMPUS_TZ).isoformat()}
         except (grade.PortalError, HTTPException) as exc:

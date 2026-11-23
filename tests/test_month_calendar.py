@@ -19,10 +19,14 @@ import web_accounts
 
 class MoodleMonthTests(IsolatedAsyncioTestCase):
     async def test_full_month_includes_completed_events_and_deduplicates_calendar_cells(self):
+        # As Moodle sends them: "instance" is the assignment's own id; the
+        # course module id (cmid) that completion records use is in the URL.
         events = [{'id': 1, 'name': 'Submitted lab is due', 'timestart': 1793552400, 'modulename': 'assign',
-                   'instance': 11, 'course': {'id': 4, 'fullname': 'INF 345 System Administration'}, 'eventtype': 'due'},
+                   'instance': 12, 'url': 'https://moodle.sdu.edu.kz/mod/assign/view.php?id=11',
+                   'course': {'id': 4, 'fullname': 'INF 345 System Administration'}, 'eventtype': 'due'},
                   {'id': 2, 'name': 'Pending lab is due', 'timestart': 1793638800, 'modulename': 'assign',
-                   'instance': 12, 'course': {'id': 4, 'fullname': 'INF 345 System Administration'}, 'eventtype': 'due'}]
+                   'instance': 11, 'url': 'https://moodle.sdu.edu.kz/mod/assign/view.php?id=12',
+                   'course': {'id': 4, 'fullname': 'INF 345 System Administration'}, 'eventtype': 'due'}]
         seen = []
         def upstream(request):
             args = parse_qs(request.content.decode()); function = args['wsfunction'][0]; seen.append(function)
@@ -94,6 +98,14 @@ class MonthApiTests(IsolatedAsyncioTestCase):
         self.assertTrue(data['moodle']['items'][0]['completed'])
         self.assertIn('no-store', response.headers['cache-control'])
         self.assertEqual(fetch.call_args.args[1:], (2026, 11))
+
+    async def test_weekly_classes_stop_when_the_semester_ends(self):
+        self.session('mysdu')
+        lesson = {'course': 'INF 345', 'title': 'Systems', 'day': 'Mo', 'start': '12:30', 'end': '13:20', 'room': 'G107'}
+        with patch.object(web_accounts.portal_schedule, 'fetch_schedule', new=AsyncMock(return_value=[lesson])):
+            data = (await self.client.get('/api/me/month?month=2026-12-01')).json()
+        # Teaching ends on 12 December (data/schedule_meta.json): only Monday the 7th.
+        self.assertEqual([item['date'] for item in data['mysdu']['items']], ['2026-12-07'])
 
     async def test_mysdu_outage_preserves_moodle_and_is_not_an_empty_schedule(self):
         self.session('mysdu'); self.session('moodle')

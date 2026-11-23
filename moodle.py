@@ -334,8 +334,12 @@ async def fetch_month(session: dict, year: int, month: int, transport=None) -> l
                 item.event_id = event_id
                 course = event.get('course') or {}
                 course_id = course.get('id') if isinstance(course, dict) else None
-                cmid = event.get('instance') if event.get('modulename') else None
-                if not cmid:
+                # Completion records are keyed by the course module id (cmid).
+                # An event's "instance" is the activity's own id (assign.id,
+                # quiz.id), a different number, so it must never be used here.
+                # The activity link, /mod/<name>/view.php?id=<cmid>, has it.
+                cmid = event.get('cmid')
+                if not cmid and '/mod/' in urlparse(item.url).path:
                     cmid = (parse_qs(urlparse(item.url).query).get('id') or [None])[0]
                 if str(cmid or '').isdigit() and str(course_id or '').isdigit():
                     lookup[event_id] = (int(course_id), int(cmid))
