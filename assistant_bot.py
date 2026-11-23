@@ -162,6 +162,30 @@ class TelegramToolbox:
 
     # ------------------------------------------------ the student's data ----
 
+    async def tool_get_my_schedule(self, args: dict, lang: str) -> assistant.ToolResult:
+        if not self.private:
+            return self._private_only(lang)
+        import notifications_bot
+
+        query = str(args.get("course") or "")[:100]
+        self.context.user_data["schedule_search"] = query
+        card, keyboard = notifications_bot.schedule_card(self.context.user_data, lang, query)
+        self.cards.append(Card(card, keyboard))
+        return assistant.ToolResult({"selected_sections": self.context.user_data.get("schedule_groups", []),
+                                     "note": "Use section buttons to add/remove; a section enables 15-minute class reminders."},
+                                    summary="[shown: personal timetable and section selection]")
+
+    async def tool_get_reminder_settings(self, args: dict, lang: str) -> assistant.ToolResult:
+        if not self.private:
+            return self._private_only(lang)
+        import notifications_bot
+
+        card, keyboard = notifications_bot.settings(self.context.user_data, lang)
+        self.cards.append(Card(card, keyboard))
+        return assistant.ToolResult({"deadline_reminders": bool(self.context.user_data.get("deadline_notifications")),
+                                     "class_reminders": bool(self.context.user_data.get("class_notifications"))},
+                                    summary="[shown: reminder settings; use buttons to change]")
+
     async def tool_get_my_grades(self, args: dict, lang: str) -> assistant.ToolResult:
         if not self.private:
             return self._private_only(lang)
@@ -313,6 +337,22 @@ class TelegramToolbox:
         return assistant.ToolResult(data, summary=f"[shown: {len(free)} free rooms for {when}: {', '.join(names[:15])}]")
 
     async def tool_get_campus_events(self, args: dict, lang: str) -> assistant.ToolResult:
+        import campus_events
+
+        try:
+            feed = await campus_events.fetch_events()
+            start, end = _date(args.get("from_date")), _date(args.get("to_date"))
+            start, end = start or end, end or start
+            if start and end and end < start:
+                start, end = end, start
+            card, keyboard = events_bot.live_card(feed, lang, start, end)
+            self.cards.append(Card(card, keyboard))
+            events = campus_events.select(feed["events"], datetime.now(rooms.CAMPUS_TZ).date(), start, end)
+            return assistant.ToolResult({"events": [{k: e[k] for k in ("title", "date", "venue", "url")} for e in events[:15]],
+                                         "source": feed["source"], "stale": feed["stale"]},
+                                        summary=f"[shown: {len(events[:15])} SDU Life campus events]")
+        except campus_events.FeedError:
+            pass
         labels = events_bot.TEXTS[lang]
         try:
             source = events_bot.EVENTS_FILE.read_text(encoding="utf-8") if events_bot.EVENTS_FILE.exists() else None
@@ -328,7 +368,7 @@ class TelegramToolbox:
         start, end = start or end, end or start  # one date: that day only
         if start and end and end < start:
             start, end = end, start
-        self.cards.append(Card(events_bot.render_events(source, lang, start=start, end=end),
+        self.cards.append(Card(i18n.section(lang, "life")["fallback"] + "\n\n" + events_bot.render_events(source, lang, start=start, end=end),
                                events_bot.details_keyboard(source, start, end)))
         today = datetime.now(rooms.CAMPUS_TZ).date()
         events = events_bot.visible(events_bot.parse_events(source), today, start, end)
@@ -340,7 +380,7 @@ class TelegramToolbox:
                 return "date to be confirmed"
             return "passed" if event.date < today else "today" if event.date == today else "upcoming"
 
-        data = {"today": today.isoformat(), "events": [
+        data = {"today": today.isoformat(), "source": "Curated campus_events.md; live SDU Life feed unavailable", "events": [
             {"title": e.title, "date": e.start.isoformat() if e.start else None, "time": e.time,
              "venue": "see the program" if e.venue == "program" else e.venue, "status": status(e)}
             for e in events

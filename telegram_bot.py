@@ -70,6 +70,8 @@ STATE_FILE = (
     if os.getenv("VERCEL")
     else core.BASE_DIR / "bot_state.pickle"
 )
+if os.getenv("BOT_STATE_PATH", "").strip():
+    STATE_FILE = Path(os.environ["BOT_STATE_PATH"]).expanduser()
 
 LANG_BUTTONS = [("kk", "🇰🇿 Қазақша"), ("ru", "🇷🇺 Русский"), ("en", "🇬🇧 English")]
 
@@ -439,6 +441,22 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     A group: the welcome with the inline main menu (no keyboard for everyone)."""
     lang = user_lang(update, context)
     if update.effective_chat.type == "private":
+        context.user_data.pop("reminders_blocked", None)
+        arg = (context.args or [""])[0]
+        if re.fullmatch(r"section_[a-f0-9]{16}", arg):
+            from notifications_bot import show_schedule
+            import student_schedule
+
+            group = next((g for g in student_schedule.groups() if g["id"] == arg[8:]), None)
+            # Deep links open a choice card. Only the student's Add tap subscribes.
+            if group:
+                await show_schedule(update, context, group["course"])
+                return
+        if arg == "reminders":
+            from notifications_bot import cmd_notifications
+
+            await cmd_notifications(update, context)
+            return
         context.user_data["keyboard"] = keyboard_key(lang)
         await reply(update.effective_message, welcome_text(update, lang), reply_markup=reply_keyboard(lang))
         return
@@ -651,6 +669,9 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _post_init(app: Application) -> None:
     """English default menu; explicit language choices get a private-chat menu."""
+    import notifications
+
+    notifications.install(app)
     await app.bot.set_my_commands(command_menu("en"))
     from documents_bot import reviewer_ids
 
@@ -682,6 +703,7 @@ def build_application() -> Application:
             "Токенді Telegram-дағы @BotFather-ден алыңыз (/newbot)."
         )
 
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     app = (
         ApplicationBuilder()
         .token(token)
@@ -695,6 +717,7 @@ def build_application() -> Application:
     from documents_bot import register_documents
     from events_bot import register_events
     from rooms_bot import register_rooms
+    from notifications_bot import register as register_notifications
 
     app.add_handler(TypeHandler(Update, refresh_chat_menu), group=-2)
     register_accounts(app)
@@ -702,6 +725,7 @@ def build_application() -> Application:
     register_rooms(app)
     register_documents(app)
     register_assistant(app)
+    register_notifications(app)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("lang", cmd_lang))

@@ -208,8 +208,14 @@ async def _send_deadlines(bot, chat_id: int, context, user_id: int, lang: str) -
         pages = [core.msg("unexpected", lang)]
     finally:
         typing.cancel()
-    for page in pages:
-        await bot.send_message(chat_id, page, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+    from notifications_bot import labels
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(labels(lang)["settings"], callback_data="notify:home")]
+    ])
+    for index, page in enumerate(pages):
+        await bot.send_message(chat_id, page, parse_mode=ParseMode.HTML, disable_web_page_preview=True,
+                               reply_markup=keyboard if index == len(pages) - 1 else None)
 
 
 async def cmd_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -318,6 +324,7 @@ async def on_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     login_guard.record_success(context.bot_data, "moodle", username)
     login_guard.note_signed_in(context.user_data)
     context.user_data["moodle"] = session
+    context.user_data.get("reminders_sent", {}).pop("moodle:expired", None)
     _close_flow(user_id, context)
     await status.edit_text(t("linked_ok", lang))
     # Signed in for the AI assistant: it answers the student's own question next

@@ -62,6 +62,19 @@ def _clock(what: str) -> dict[str, str]:
 
 TOOLS: tuple[Tool, ...] = (
     Tool(
+        "get_my_schedule",
+        "Show the student's selected weekly course sections or search the campus timetable by course "
+        "code/name. Shows Add/Remove section buttons. Adding a section enables reminders 15 minutes "
+        "before its classes, with the course and room. Never assume the whole campus timetable is personal.",
+        _args(course={"type": "string", "description": "Course code (CSS 217) or official name; omit to show selected sections."}),
+    ),
+    Tool(
+        "get_reminder_settings",
+        "Show reminder settings and their on/off buttons: Moodle deadlines 12 hours before due and "
+        "selected classes 15 minutes before start. The student changes settings using the buttons.",
+        _args(),
+    ),
+    Tool(
         "get_my_grades",
         "The student's own grades from the university portal (my.sdu.edu.kz) transcript: every "
         "semester with its courses, final letter grades and ECTS credits, the semester GPA (SPA) "

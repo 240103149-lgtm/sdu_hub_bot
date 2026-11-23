@@ -149,12 +149,16 @@ def account_keyboard(context, lang):
     """Grades and deadlines first (they sign the student in when needed),
     then sign in, link Moodle or unlink: one button per account."""
     t = lambda key: A[key][lang]
+    from notifications_bot import labels as reminder_labels
+
     portal = login._student_id(context)
     moodle = (context.user_data or {}).get("moodle")
     labels = bot.KEYBOARD_LABELS[lang]
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(labels["grade"], callback_data="menu:grade"),
          InlineKeyboardButton(labels["deadline"], callback_data="menu:deadline")],
+        [InlineKeyboardButton(reminder_labels(lang)["settings"], callback_data="notify:home"),
+         InlineKeyboardButton(reminder_labels(lang)["schedule"], callback_data="schedule:home")],
         [InlineKeyboardButton(t("btn_unlink_portal") if portal else t("btn_signin_portal"),
                               callback_data="account:unlink" if portal else "account:login")],
         [InlineKeyboardButton(t("btn_unlink_moodle") if moodle else t("btn_link_moodle"),
@@ -188,6 +192,7 @@ def account_button(callback):
 
 
 def register_accounts(app):
+    from notifications_bot import cmd_notifications, cmd_schedule, on_settings, on_schedule
     from events_bot import cmd_events
     from rooms_bot import cmd_rooms
 
@@ -196,6 +201,7 @@ def register_accounts(app):
     only_text = filters.TEXT & ~filters.COMMAND & private & ~filters.Text(bot.keyboard_labels(*bot.KEYBOARD_ACTIONS, *bot.OLD_KEYBOARD_ACTIONS))
     tapped = lambda *actions: private & filters.Text(bot.keyboard_labels(*actions))
     commands = {
+        "notifications": cmd_notifications, "schedule": cmd_schedule,
         "start": bot.cmd_start, "help": bot.cmd_help, "lang": bot.cmd_lang,
         "reset": bot.cmd_reset, "guide": bot.cmd_guide,
         "rooms": cmd_rooms, "room": cmd_rooms, "events": cmd_events,
@@ -242,6 +248,8 @@ def register_accounts(app):
             CallbackQueryHandler(leave(bot.on_menu), pattern=bot.MENU_PATTERN),
             CallbackQueryHandler(leave(bot.on_lang_chosen), pattern=r"^lang:"),
             MessageHandler(tapped("calendar", "rooms", "events", "canteen", "guide", "account"), leave(bot.on_keyboard_button)),
+            CallbackQueryHandler(leave(on_settings), pattern=r"^notify:(home|deadline|class)$"),
+            CallbackQueryHandler(leave(on_schedule), pattern=r"^schedule:(home|toggle:[a-f0-9]{16}|page:\d+)$"),
             CallbackQueryHandler(leave(account_button(grade.cmd_unlink)), pattern=r"^account:unlink$"),
             CallbackQueryHandler(leave(account_button(deadline.cmd_unlink_moodle)), pattern=r"^account:unlink_moodle$"),
         ] + [

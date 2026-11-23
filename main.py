@@ -23,6 +23,9 @@ from pydantic import BaseModel
 
 import core
 import i18n
+import campus_events
+import rooms
+import student_schedule
 
 TELEGRAM_MODE = os.getenv("TELEGRAM_MODE", "off").strip().lower()  # off | webhook
 WEBHOOK_BASE = os.getenv("TELEGRAM_WEBHOOK_URL", "").strip().rstrip("/")
@@ -104,6 +107,39 @@ app = FastAPI(title="University AI Knowledge Hub", lifespan=lifespan)
 
 
 # ------------------------------------------------------------------ API ----
+
+
+@app.get("/api/config")
+def public_config():
+    from urllib.parse import urlparse
+
+    bot_url = os.getenv("TELEGRAM_PUBLIC_URL", "https://t.me/sdu_hub_bot").strip()
+    parsed = urlparse(bot_url)
+    if parsed.scheme != "https" or parsed.hostname != "t.me":
+        bot_url = "https://t.me/sdu_hub_bot"
+    return {"telegram_url": bot_url, "timezone": "Asia/Almaty"}
+
+
+@app.get("/api/events")
+async def public_events():
+    try:
+        return await campus_events.fetch_events()
+    except campus_events.FeedError:
+        raise HTTPException(status_code=503, detail="SDU Life is temporarily unavailable") from None
+
+
+@app.get("/api/schedule")
+def public_schedule(course: str = "", offset: int = 0):
+    if len(course) > 100 or not 0 <= offset <= 10000:
+        raise HTTPException(status_code=422, detail="Invalid search")
+    try:
+        # A search is required: don't send the university's entire timetable.
+        groups = student_schedule.groups(course) if len(course.strip()) >= 2 else []
+        return {"groups": groups[offset:offset + 30], "total": len(groups),
+                "next_offset": offset + 30 if offset + 30 < len(groups) else None,
+                **student_schedule.term()}
+    except (rooms.ScheduleError, OSError, ValueError):
+        raise HTTPException(status_code=503, detail="The timetable is temporarily unavailable") from None
 
 
 class Message(BaseModel):

@@ -1,7 +1,7 @@
 # University AI Knowledge Hub
 # pip install -r requirements.txt
 
-python-telegram-bot>=21.6,<23      # Telegram bot (async)
+python-telegram-bot[job-queue]>=21.6,<23      # Telegram bot + reminder scheduler
 google-genai>=1.0                  # Gemini
 fastapi>=0.115                     # website / REST API
 uvicorn[standard]>=0.30            # server for FastAPI

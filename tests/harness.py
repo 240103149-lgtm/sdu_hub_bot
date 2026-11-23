@@ -7,6 +7,7 @@ import os
 os.environ.setdefault('GEMINI_API_KEY', 'offline-test-key')
 os.environ.setdefault('GEMINI_MODEL', 'offline-test-model')
 os.environ.setdefault('TELEGRAM_BOT_TOKEN', '123456:offline-test-token')
+os.environ.setdefault('CAMPUS_EVENTS_LIVE', 'off')
 
 from datetime import datetime, timezone
 from pathlib import Path

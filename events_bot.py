@@ -27,6 +27,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler
 import core
 import i18n
 import rooms
+import campus_events
 from rooms import CAMPUS_TZ
 from telegram_bot import reply, retry_keyboard, user_lang
 
@@ -246,6 +247,13 @@ def _range_code(start: date | None, end: date | None) -> str:
 async def _show(message, lang: str, start: date | None, end: date | None) -> None:
     labels = TEXTS[lang]
     try:
+        feed = await campus_events.fetch_events()
+        text, keyboard = live_card(feed, lang, start, end)
+        await reply(message, text, reply_markup=keyboard)
+        return
+    except campus_events.FeedError:
+        pass
+    try:
         exists = EVENTS_FILE.exists()
         source = EVENTS_FILE.read_text(encoding="utf-8") if exists else None
     except (OSError, UnicodeDecodeError) as exc:
@@ -257,7 +265,7 @@ async def _show(message, lang: str, start: date | None, end: date | None) -> Non
     if source is None:
         await reply(message, labels["missing"])
         return
-    await reply(message, render_events(source, lang, start=start, end=end),
+    await reply(message, i18n.section(lang, "life")["fallback"] + "\n\n" + render_events(source, lang, start=start, end=end),
                 reply_markup=details_keyboard(source, start, end))
 
 
@@ -309,3 +317,45 @@ def register_events(app):
     app.add_handler(CommandHandler("events", cmd_events))
     app.add_handler(CallbackQueryHandler(on_event_details, pattern=r"^ev:\d+$"))
     app.add_handler(CallbackQueryHandler(on_events_retry, pattern=r"^events:retry"))
+    app.add_handler(CallbackQueryHandler(on_live_details, pattern=r"^life:\d+$"))
+
+
+def live_card(feed: dict, lang: str, start=None, end=None):
+    labels = i18n.section(lang, "life")
+    events = campus_events.select(feed["events"], datetime.now(CAMPUS_TZ).date(), start, end)
+    lines = ["# " + labels["title"], labels["source"]]
+    if feed["stale"]:
+        lines += [labels["stale"]]
+    if not events:
+        lines += ["", labels["empty"]]
+    buttons = []
+    for event in events[:15]:
+        moment = datetime.fromisoformat(event["date"]).astimezone(CAMPUS_TZ)
+        clock = moment.strftime("%H:%M") if event["has_time"] else TEXTS[lang]["tbc"]
+        lines += ["", "**" + event["title"] + "**", f"{moment:%d.%m.%Y} · {clock} · {event['venue'] or TEXTS[lang]['tbc']}"]
+        buttons.append([InlineKeyboardButton(event["title"][:55], callback_data=f"life:{event['id']}")])
+    buttons.append([InlineKeyboardButton(labels["open"], url=campus_events.SOURCE)])
+    return "\n".join(lines), InlineKeyboardMarkup(buttons)
+
+
+async def on_live_details(update, context):
+    await update.callback_query.answer()
+    lang = user_lang(update, context)
+    try:
+        feed = await campus_events.fetch_events()
+    except campus_events.FeedError:
+        await reply(update.effective_message, TEXTS[lang]["error"])
+        return
+    event = next((e for e in feed["events"] if e["id"] == int(update.callback_query.data.split(":")[1])), None)
+    if event is None:
+        await reply(update.effective_message, TEXTS[lang]["gone"])
+        return
+    labels = i18n.section(lang, "life")
+    moment = datetime.fromisoformat(event["date"]).astimezone(CAMPUS_TZ)
+    clock = moment.strftime("%H:%M") if event["has_time"] else TEXTS[lang]["tbc"]
+    body = f"## {event['title']}\n{moment:%d.%m.%Y} · {clock}\n{event['venue'] or TEXTS[lang]['tbc']}\n\n{event['description']}"
+    if feed["stale"]:
+        body += "\n\n" + labels["stale"]
+    await reply(update.effective_message, body, reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton(labels["open"], url=event["url"])]
+    ]))

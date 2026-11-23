@@ -3,6 +3,7 @@ import os
 os.environ.setdefault('GEMINI_API_KEY', 'offline-test-key')
 os.environ.setdefault('GEMINI_MODEL', 'offline-test-model')
 os.environ.setdefault('TELEGRAM_BOT_TOKEN', '123456:offline-test-token')
+os.environ.setdefault('CAMPUS_EVENTS_LIVE', 'off')
 
 import asyncio
 from datetime import date, datetime, timezone
@@ -415,13 +416,14 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Менің аккаунтым', sent['text'])
         rows = sent['reply_markup'].inline_keyboard
         self.assertEqual([b.callback_data for b in rows[0]], ['menu:grade', 'menu:deadline'])  # grades and deadlines live here
-        self.assertEqual([row[0].callback_data for row in rows[1:]], ['account:login', 'menu:deadline'])
+        self.assertEqual([b.callback_data for b in rows[1]], ['notify:home', 'schedule:home'])
+        self.assertEqual([row[0].callback_data for row in rows[2:]], ['account:login', 'menu:deadline'])
         self.app.user_data[42]['portal'] = {'student_id': '240103149', 'cookies': {}}
         self.app.user_data[42]['moodle'] = {'mode': 'token', 'token': 't'}
         await self.update('/account')
         sent = self.send.call_args.kwargs
         self.assertIn('240103149', sent['text'])
-        self.assertEqual([row[0].callback_data for row in sent['reply_markup'].inline_keyboard[1:]],
+        self.assertEqual([row[0].callback_data for row in sent['reply_markup'].inline_keyboard[2:]],
                          ['account:unlink', 'account:unlink_moodle'])
         await self.update(callback='account:unlink')
         await self.update(callback='account:unlink_moodle')

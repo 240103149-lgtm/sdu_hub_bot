@@ -242,11 +242,12 @@ def parse_events(events: list[dict]) -> list[Deadline]:
     return sorted(result, key=lambda d: d.due)
 
 
-async def fetch_deadlines(session: dict, transport: httpx.AsyncBaseTransport | None = None) -> list[Deadline]:
+async def fetch_deadlines(session: dict, transport: httpx.AsyncBaseTransport | None = None,
+                          *, upcoming_only: bool = False) -> list[Deadline]:
     """Everything the student still has to hand in, oldest first."""
     now = int(time.time())
     args = {
-        "timesortfrom": now - LOOKBACK_DAYS * 86400,
+        "timesortfrom": now if upcoming_only else now - LOOKBACK_DAYS * 86400,
         "timesortto": now + LOOKAHEAD_DAYS * 86400,
         "limitnum": MAX_EVENTS,
     }

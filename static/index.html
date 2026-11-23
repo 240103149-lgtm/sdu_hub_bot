@@ -3,407 +3,76 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>University Knowledge Hub</title>
-<style>
-  :root {
-    --paper: #f3f6f5;
-    --surface: #ffffff;
-    --ink: #17212b;
-    --muted: #586674;
-    --line: #d5dde2;
-    --brand: #1d4e89;
-    --brand-ink: #ffffff;
-    --error-bg: #fdecec;
-    --error-ink: #8a1f1f;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --paper: #10161c;
-      --surface: #18212a;
-      --ink: #e7ecf0;
-      --muted: #9aa7b2;
-      --line: #2a3540;
-      --brand: #6fa8e8;
-      --brand-ink: #0b1520;
-      --error-bg: #3a1c1c;
-      --error-ink: #f3b4b4;
-    }
-  }
-
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    background: var(--paper);
-    color: var(--ink);
-    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
-    display: flex;
-    flex-direction: column;
-  }
-  :focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
-
-  header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--line);
-    padding: 12px 20px 0;
-  }
-  .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
-  header h1 { margin: 0; font-size: 1.25rem; font-weight: 650; }
-
-  .langs { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .lang {
-    appearance: none; background: none; border: 0; cursor: pointer; font: inherit; font-size: .9rem;
-    color: var(--muted); padding: 6px 12px;
-  }
-  .lang + .lang { border-left: 1px solid var(--line); }
-  .lang[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
-
-  .tabs { display: flex; gap: 4px; }
-  .tab {
-    appearance: none; background: none; border: 0; cursor: pointer;
-    padding: 10px 14px; font: inherit; color: var(--muted);
-    border-bottom: 3px solid transparent;
-  }
-  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--brand); font-weight: 600; }
-
-  main { flex: 1; min-height: 0; display: flex; }
-  .panel { flex: 1; min-height: 0; display: none; flex-direction: column; }
-  .panel.active { display: flex; }
-
-  /* Chat */
-  .messages { flex: 1; overflow-y: auto; padding: 20px; }
-  .thread { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
-  .empty { max-width: 720px; margin: 8vh auto 0; }
-  .empty[hidden] { display: none; }
-  .empty h2 { margin: 0 0 6px; font-size: 1.35rem; }
-  .empty p { margin: 0 0 16px; color: var(--muted); max-width: 60ch; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip {
-    appearance: none; cursor: pointer; font: inherit; color: var(--ink);
-    background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
-    padding: 8px 14px;
-  }
-  .chip:hover { border-color: var(--brand); }
-
-  .msg {
-    max-width: 85%; padding: 10px 14px; border-radius: 14px;
-    white-space: pre-wrap; overflow-wrap: anywhere;
-  }
-  .msg.user { align-self: flex-end; background: var(--brand); color: var(--brand-ink); border-bottom-right-radius: 4px; }
-  .msg.bot { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
-  .msg.pending { color: var(--muted); }
-  .msg.error { background: var(--error-bg); color: var(--error-ink); border-color: transparent; }
-
-  .composer { border-top: 1px solid var(--line); background: var(--surface); padding: 12px 20px; }
-  .composer form { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
-  textarea {
-    flex: 1; resize: none; font: inherit; color: var(--ink); background: var(--paper);
-    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; max-height: 140px;
-  }
-  .send {
-    appearance: none; cursor: pointer; font: inherit; font-weight: 600;
-    background: var(--brand); color: var(--brand-ink); border: 0; border-radius: 10px; padding: 10px 18px;
-  }
-  .send:disabled { opacity: .55; cursor: not-allowed; }
-
-  /* Guide */
-  .guide { flex: 1; overflow-y: auto; padding: 24px 20px 40px; }
-  .guide-body { max-width: 68ch; margin: 0 auto; }
-  .guide-body h2 { font-size: 1.4rem; margin: 0 0 12px; }
-  .guide-body h3 { font-size: 1.1rem; margin: 26px 0 8px; }
-  .guide-body p, .guide-body li { margin: 0 0 6px; }
-  .guide-body ol, .guide-body ul { padding-left: 1.4em; margin: 0 0 8px; }
-  .guide-body ol li { padding-left: 4px; }
-  .guide-body table { border-collapse: collapse; width: 100%; margin: 4px 0 14px; font-size: .95rem; }
-  .guide-body th, .guide-body td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-  .guide-body th { background: var(--surface); }
-  .guide-body a, .msg a { color: inherit; }
-
-  @media (max-width: 520px) {
-    .msg { max-width: 92%; }
-    header, .messages, .composer, .guide { padding-left: 14px; padding-right: 14px; }
-  }
-</style>
+<meta name="description" content="Your campus, a little closer. SDU Hub brings university answers, campus events and your timetable together.">
+<meta name="theme-color" content="#f5f5f7">
+<title>SDU Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%231d1d1f'/%3E%3Cpath d='M16 19v26m32-26v26M16 32h32' stroke='white' stroke-width='6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header>
-  <div class="bar">
-    <h1 data-i18n="title">University Knowledge Hub</h1>
-    <div class="langs" role="group" aria-label="Language">
-      <button class="lang" type="button" data-lang="kk">Қазақша</button>
-      <button class="lang" type="button" data-lang="ru">Русский</button>
-      <button class="lang" type="button" data-lang="en">English</button>
-    </div>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="globalnav">
+ <div class="nav-inner">
+  <button class="wordmark" data-view="home" aria-label="SDU Hub home"><span class="hub-mark" aria-hidden="true">h</span> SDU <span>Hub</span></button>
+  <nav aria-label="Main navigation" id="navigation" role="tablist">
+   <button class="tab" id="tab-home" data-view="home" role="tab" aria-controls="panel-home" aria-selected="true" data-i18n="navHome">Overview</button>
+   <button class="tab" id="tab-chat" data-view="chat" role="tab" aria-controls="panel-chat" aria-selected="false" data-i18n="navChat">Assistant</button>
+   <button class="tab" id="tab-events" data-view="events" role="tab" aria-controls="panel-events" aria-selected="false" data-i18n="navEvents">Campus</button>
+   <button class="tab" id="tab-schedule" data-view="schedule" role="tab" aria-controls="panel-schedule" aria-selected="false" data-i18n="navSchedule">My week</button>
+   <button class="tab" id="tab-guide" data-view="guide" role="tab" aria-controls="panel-guide" aria-selected="false" data-i18n="navGuide">Guide</button>
+  </nav>
+  <div class="langs" role="group" aria-label="Language">
+   <button class="lang" type="button" data-lang="kk">KZ</button>
+   <button class="lang" type="button" data-lang="ru">RU</button>
+   <button class="lang" type="button" data-lang="en">EN</button>
   </div>
-  <div class="tabs" role="tablist">
-    <button class="tab" role="tab" id="tab-chat" aria-selected="true" aria-controls="panel-chat" data-i18n="tabChat">Ask a question</button>
-    <button class="tab" role="tab" id="tab-guide" aria-selected="false" aria-controls="panel-guide" data-i18n="tabGuide">Schedule creation guide</button>
-  </div>
+ </div>
 </header>
-
-<main>
-  <section class="panel active" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat">
-    <div class="messages" id="messages" aria-live="polite">
-      <div class="empty" id="empty">
-        <h2 data-i18n="emptyTitle">Ask about the university</h2>
-        <p data-i18n="emptyText">You can write in Kazakh, Russian or English.</p>
-        <div class="chips" id="chips"></div>
+<div class="subnav"><div class="subnav-inner"><span>SDU Hub</span><a class="button small" href="https://t.me/sdu_hub_bot" data-bot-link data-i18n="openBot" target="_blank" rel="noopener noreferrer">Open Telegram</a></div></div>
+<main id="main">
+ <section class="panel active" id="panel-home" role="tabpanel" aria-labelledby="tab-home">
+  <div class="hero wrap">
+   <p class="eyebrow" data-i18n="eyebrow">A little help. A better university day.</p>
+   <h1 class="hero-title" data-i18n="heroTitle">Your campus.&#10;A little closer.</h1>
+   <p class="hero-copy" data-i18n="heroText">The answers, the moments, the things you can’t miss. All together in SDU Hub.</p>
+   <div class="actions"><button class="button" data-view="chat" data-i18n="heroAction">Meet your assistant</button><button class="text-button" data-view="events" data-i18n="heroSecondary">Explore campus</button></div>
+   <div class="product-stage" aria-label="SDU Hub reminder preview">
+    <div class="stage-glow" aria-hidden="true"></div>
+    <div class="device-window">
+     <div class="window-chrome"><span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span><span data-i18n="preview">A day with Hub · Preview</span><span class="window-symbol" aria-hidden="true">⌘</span></div>
+     <div class="device-content">
+      <div class="device-intro"><span class="mini-wordmark">SDU Hub</span><h2 data-i18n="previewTitle">More present.&#10;Less to remember.</h2><div class="hub-sculpture" aria-hidden="true"><span>h</span><div class="orbit one"></div><div class="orbit two"></div></div></div>
+      <div class="notification-stack">
+       <div class="notification notification-class"><span class="notification-icon blue" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="4"/><path d="M4 10h16M8 3v4m8-4v4m-8 7h3"/></svg></span><div><p class="notification-label" data-i18n="previewClass">Your next class</p><strong data-i18n="previewCourse">Software Architecture</strong><p data-i18n="previewTime">In 15 minutes · G107</p></div><span class="tiny-badge">15m</span></div>
+       <div class="notification notification-deadline"><span class="notification-icon orange" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span><div><p class="notification-label" data-i18n="previewDeadline">A gentle heads-up</p><strong data-i18n="previewTask">Your assignment is due in 12 hours.</strong><p>Moodle</p></div><span class="tiny-badge">12h</span></div>
+       <button class="assistant-preview" data-view="chat"><span class="sparkle" aria-hidden="true">✳</span><span data-i18n="previewAsk">One question. A clearer day.</span><span class="search-symbol" aria-hidden="true"></span></button>
       </div>
-      <div class="thread" id="thread"></div>
+     </div>
     </div>
-    <div class="composer">
-      <form id="form">
-        <textarea id="input" rows="1"></textarea>
-        <button class="send" id="send" type="submit" data-i18n="send">Send</button>
-      </form>
-    </div>
+   </div>
+   <p class="caption" data-i18n="previewNote">Illustrative reminders. Connect your own timetable and Moodle in Telegram.</p>
+  </div>
+  <section class="features wrap"><h2 class="section-title" data-i18n="featureTitle">Less keeping track.&#10;More being there.</h2>
+   <div class="feature-grid">
+    <article class="feature-card deadline-feature"><span class="feature-kicker">Moodle</span><h3 data-i18n="deadlineTitle">Deadlines.&#10;Before the last minute.</h3><p data-i18n="deadlineText">A reminder 12 hours before a Moodle assignment is due. So you have time to make it yours.</p><a class="text-button" data-bot-link data-bot-start="reminders" href="https://t.me/sdu_hub_bot?start=reminders" target="_blank" rel="noopener noreferrer" data-i18n="setupReminders">Set up reminders</a><div class="countdown-art" aria-hidden="true"><span>12</span><span class="countdown-unit">hours</span><div class="countdown-ring"></div></div></article>
+    <article class="feature-card class-feature"><span class="feature-kicker" data-i18n="featureTimetable">Your timetable</span><h3 data-i18n="classTitle">Right class.&#10;Right room.</h3><p data-i18n="classText">Your course, start time and room. In Telegram, 15 minutes before class.</p><button class="text-button" data-view="schedule" data-i18n="scheduleAction">Build my week</button><div class="room-art" aria-hidden="true"><div class="room-door"><span>G107</span><i></i></div><div class="room-pill">15 min</div></div></article>
+   </div>
   </section>
-
-  <section class="panel" id="panel-guide" role="tabpanel" aria-labelledby="tab-guide">
-    <div class="guide"><div class="guide-body" id="guide-body"></div></div>
-  </section>
+  <section class="campus-section"><div class="wrap"><p class="eyebrow" data-i18n="campusLabel">Life beyond the lecture.</p><h2 class="section-title" data-i18n="campusTitle">Make room for a little more.</h2><p class="section-copy" data-i18n="campusText">Discover what’s happening across SDU. Events, talks and the people worth showing up for.</p><div class="events-grid" id="home-events" aria-live="polite"></div><div class="center"><button class="button secondary" data-view="events" data-i18n="allEvents">Explore events</button></div></div></section>
+ </section>
+ <section class="panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat">
+  <div class="page-heading wrap"><p class="eyebrow" data-i18n="chatEyebrow">A good place to ask.</p><h1 data-i18n="chatTitle">A little clarity.&#10;Whenever you need it.</h1></div>
+  <div class="chat-shell wrap"><div class="chat-toolbar"><span>SDU Hub <span class="muted">Assistant</span></span><button id="new-chat" class="text-button" data-i18n="newChat">New conversation</button></div><div class="messages" id="messages"><div class="empty" id="empty"><span class="assistant-emblem" aria-hidden="true">✳</span><h2 data-i18n="emptyTitle">Ask about the university</h2><p data-i18n="emptyText">You can write in Kazakh, Russian or English.</p><div class="chips" id="chips"></div></div><div class="thread" id="thread" role="log" aria-live="polite"></div></div><div class="composer"><form id="form"><textarea id="input" rows="1"></textarea><button class="send button" id="send" type="submit" data-i18n="send">Send</button></form></div></div><p class="chat-note wrap" data-i18n="chatNote">Personal grades, Moodle deadlines and automatic reminders are available in the Telegram bot.</p>
+ </section>
+ <section class="panel" id="panel-events" role="tabpanel" aria-labelledby="tab-events"><div class="page-heading wrap"><p class="eyebrow" data-i18n="campusLabel">Life beyond the lecture.</p><h1 data-i18n="lifeTitle">Campus, happening now.</h1><p data-i18n="campusText">Discover what’s happening across SDU.</p></div><div class="wrap events-page"><div class="event-controls"><div class="segmented"><button id="events-upcoming" aria-pressed="true" data-i18n="upcoming">Upcoming</button><button id="events-all" aria-pressed="false" data-i18n="allPublished">All published</button></div><button id="refresh-events" class="text-button" data-i18n="refresh">Refresh</button></div><p id="events-status" class="muted" role="status"></p><div class="events-grid" id="all-events" aria-live="polite"></div><p class="caption" data-i18n="eventSource">Events from SDU Life. Registration may require your SDU account.</p></div></section>
+ <section class="panel" id="panel-schedule" role="tabpanel" aria-labelledby="tab-schedule"><div class="page-heading wrap"><p class="eyebrow" data-i18n="navSchedule">My week</p><h1 data-i18n="scheduleTitle">A week that&#10;feels like yours.</h1><p data-i18n="scheduleText">Find your courses. Pick your sections. See the week come together.</p></div><div class="wrap schedule-page"><form id="schedule-search" class="schedule-search"><label for="course-search" data-i18n="searchLabel">Course code or course name</label><div><input id="course-search" type="search" required minlength="2" maxlength="100" placeholder="Try CSS 217 or Calculus"><button class="button" data-i18n="search">Find sections</button></div></form><p id="term-info" class="caption"></p><p id="search-status" role="status" class="muted"></p><div id="schedule-results" class="section-results"></div><button id="more-sections" class="text-button" hidden data-i18n="next">Next</button><div class="week-header"><h2 data-i18n="mySections">Your week</h2><a class="text-button" data-bot-link data-bot-start="reminders" href="https://t.me/sdu_hub_bot?start=reminders" target="_blank" rel="noopener noreferrer" data-i18n="setupReminders">Set up reminders</a></div><div class="week-grid" id="my-week" aria-live="polite"></div><p class="caption local-note" data-i18n="localSchedule">Your selection stays in this browser. Use “Add in Telegram” for each section to enable automatic reminders in the bot.</p></div></section>
+ <section class="panel" id="panel-guide" role="tabpanel" aria-labelledby="tab-guide"><div class="page-heading wrap"><p class="eyebrow" data-i18n="navGuide">Guide</p><h1 data-i18n="guideTitle">Your next semester.&#10;Step by step.</h1></div><div class="guide wrap"><div class="guide-body" id="guide-body"></div></div></section>
 </main>
-
+<footer><div class="wrap footer-inner"><span class="footer-brand">SDU Hub</span><p data-i18n="footer">An independent student project. University information comes from published SDU sources.</p><a href="https://life.sdu.edu.kz/en" target="_blank" rel="noopener noreferrer">SDU Life</a></div></footer>
+<dialog id="event-dialog"><button id="close-event" class="dialog-close" aria-label="Close">×</button><div id="event-detail"></div></dialog>
 <script>
-  // Texts come from locales/<lang>.json (section "web"); main.py puts them here (US6).
-  const I18N = /*I18N*/null || { en: {} };
-
-  const history = [];
-  let busy = false;
-  let guideLoaded = false;
-  let lang = pickInitialLang();
-
-  const $ = (id) => document.getElementById(id);
-  const thread = $("thread"), messages = $("messages"), input = $("input"), sendBtn = $("send");
-  // A text in the chosen language, else English, else nothing (the page then
-  // keeps the English wording written in the HTML).
-  const t = (key) => (I18N[lang] || {})[key] ?? (I18N.en || {})[key] ?? "";
-
-  function pickInitialLang() {
-    try {
-      const saved = localStorage.getItem("lang");
-      if (saved && I18N[saved]) return saved;
-    } catch { /* storage may be unavailable */ }
-    const nav = (navigator.language || "en").slice(0, 2).toLowerCase();
-    return I18N[nav] ? nav : "en";
-  }
-
-  function applyLang() {
-    document.documentElement.lang = lang;
-    document.title = t("title") || document.title;
-    document.querySelectorAll("[data-i18n]").forEach((el) => {
-      const value = t(el.dataset.i18n);
-      if (value) el.textContent = value;
-    });
-    input.placeholder = t("placeholder");
-    input.setAttribute("aria-label", t("inputLabel"));
-    document.querySelectorAll(".lang").forEach((b) =>
-      b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
-
-    const chips = $("chips");
-    chips.textContent = "";
-    (t("chips") || []).forEach((text) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "chip";
-      b.textContent = text;
-      b.addEventListener("click", () => send(text));
-      chips.appendChild(b);
-    });
-
-    guideLoaded = false;
-    if ($("panel-guide").classList.contains("active")) loadGuide();
-  }
-
-  document.querySelectorAll(".lang").forEach((b) =>
-    b.addEventListener("click", () => {
-      lang = b.dataset.lang;
-      try { localStorage.setItem("lang", lang); } catch { /* ignore */ }
-      applyLang();
-    }));
-
-  /* --- text rendering (DOM only, no innerHTML) --- */
-  // **bold**, [text](https://link) and Markdown escapes such as "Add \- Drop".
-  function renderInline(parent, raw) {
-    const text = raw.replace(/\\([\\`*_{}\[\]()#+\-.!|>~])/g, "$1");
-    const pattern = /\[([^\[\]\n]+)\]\((https?:\/\/[^\s()]+)\)|\*\*(.+?)\*\*/g;
-    let last = 0, m;
-    while ((m = pattern.exec(text))) {
-      if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
-      if (m[1] !== undefined) {
-        const a = document.createElement("a");
-        a.href = m[2];
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        renderInline(a, m[1]);
-        parent.appendChild(a);
-      } else {
-        const s = document.createElement("strong");
-        renderInline(s, m[3]);
-        parent.appendChild(s);
-      }
-      last = pattern.lastIndex;
-    }
-    if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
-  }
-  function renderRich(parent, text) {
-    parent.textContent = "";
-    renderInline(parent, text.replace(/^(\s*)[*-]\s+/gm, "$1• "));
-  }
-
-  /* --- chat --- */
-  function addMessage(role, text) {
-    const el = document.createElement("div");
-    el.className = "msg " + role;
-    renderRich(el, text);
-    thread.appendChild(el);
-    messages.scrollTop = messages.scrollHeight;
-    return el;
-  }
-
-  async function send(raw) {
-    const text = raw.trim();
-    if (!text || busy) return;
-    busy = true;
-    sendBtn.disabled = true;
-    $("empty").hidden = true;
-
-    addMessage("user", text);
-    const pending = addMessage("bot", t("pending"));
-    pending.classList.add("pending");
-    input.value = "";
-    input.style.height = "auto";
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: history.slice(-10), lang }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || t("unknownError"));
-      pending.classList.remove("pending");
-      renderRich(pending, data.reply);
-      history.push({ role: "user", text }, { role: "assistant", text: data.reply });
-    } catch (err) {
-      pending.classList.remove("pending");
-      pending.classList.add("error");
-      renderRich(pending, err instanceof TypeError ? t("offline") : err.message);
-    } finally {
-      busy = false;
-      sendBtn.disabled = false;
-      messages.scrollTop = messages.scrollHeight;
-      input.focus();
-    }
-  }
-
-  $("form").addEventListener("submit", (e) => { e.preventDefault(); send(input.value); });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input.value); }
-  });
-  input.addEventListener("input", () => {
-    input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 140) + "px";
-  });
-
-  /* --- tabs --- */
-  function showTab(name) {
-    ["chat", "guide"].forEach((n) => {
-      $("panel-" + n).classList.toggle("active", n === name);
-      $("tab-" + n).setAttribute("aria-selected", String(n === name));
-    });
-    if (name === "guide" && !guideLoaded) loadGuide();
-  }
-  $("tab-chat").addEventListener("click", () => showTab("chat"));
-  $("tab-guide").addEventListener("click", () => showTab("guide"));
-
-  /* --- registration guide (US2) --- */
-  const cells = (line) => line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
-  const isTableRule = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line) && line.includes("|");
-
-  function renderGuide(container, text) {
-    container.textContent = "";
-    let list = null, listType = null;
-    const closeList = () => { list = null; listType = null; };
-    const addItem = (type, content) => {
-      if (listType !== type) {
-        list = document.createElement(type);
-        listType = type;
-        container.appendChild(list);
-      }
-      const li = document.createElement("li");
-      renderInline(li, content);
-      list.appendChild(li);
-    };
-    const lines = text.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line || line.startsWith("<!--")) { closeList(); continue; }
-      let m;
-      if (line.startsWith("|") && isTableRule(lines[i + 1] || "")) {
-        closeList();
-        const table = document.createElement("table");
-        const head = table.createTHead().insertRow();
-        cells(line).forEach((c) => { const th = document.createElement("th"); renderInline(th, c); head.appendChild(th); });
-        const body = table.createTBody();
-        for (i += 2; i < lines.length && lines[i].trim().startsWith("|"); i++) {
-          const row = body.insertRow();
-          cells(lines[i]).forEach((c) => renderInline(row.insertCell(), c));
-        }
-        i--;  // the for-loop moves on to the first line after the table
-        container.appendChild(table);
-      } else if ((m = line.match(/^(#{1,3})\s+(.*)/))) {
-        closeList();
-        const h = document.createElement(m[1].length === 1 ? "h2" : "h3");
-        renderInline(h, m[2]);
-        container.appendChild(h);
-      } else if ((m = line.match(/^\d+\.\s+(.*)/))) {
-        addItem("ol", m[1]);
-      } else if ((m = line.match(/^[-*]\s+(.*)/))) {
-        addItem("ul", m[1]);
-      } else {
-        closeList();
-        const p = document.createElement("p");
-        renderInline(p, line);
-        container.appendChild(p);
-      }
-    }
-  }
-  // "Not published" is final; a temporary failure gets a Retry button.
-  function guideMessage(body, text, retry) {
-    body.textContent = "";
-    const p = document.createElement("p");
-    p.textContent = text;
-    body.appendChild(p);
-    if (retry) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "send";
-      b.textContent = t("retry");
-      b.addEventListener("click", loadGuide);
-      body.appendChild(b);
-    }
-  }
-  async function loadGuide() {
-    const body = $("guide-body");
-    body.textContent = t("guideLoading");
-    const requestedLang = lang;
-    try {
-      const res = await fetch("/api/guide?lang=" + requestedLang);
-      if (requestedLang !== lang) return; // language changed while loading
-      if (res.status === 404) {
-        const data = await res.json().catch(() => ({}));
-        guideMessage(body, data.detail || t("guideError"), false);
-        return;
-      }
-      if (!res.ok) throw new Error();
-      renderGuide(body, await res.text());
-      guideLoaded = true;
-    } catch {
-      if (requestedLang === lang) guideMessage(body, t("guideError"), true);
-    }
-  }
-
-  applyLang();
+const I18N = /*I18N*/null || { en: {} };
 </script>
+<script src="/static/app.js" defer></script>
 </body>
 </html>
