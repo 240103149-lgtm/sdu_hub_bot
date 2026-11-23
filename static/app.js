@@ -46,7 +46,8 @@
     });
 
     renderEvents();
-    renderSchedule();
+    renderWeek();
+    if ($('account-dialog').open) renderAccountDialog();
     guideLoaded = false;
     if ($("panel-guide").classList.contains("active")) loadGuide();
   }
@@ -151,6 +152,7 @@
     if (name === "guide" && !guideLoaded) loadGuide();
     window.scrollTo({ top: 0, behavior: "instant" });
     if (name === "events" && !eventFeed) loadEvents();
+    if (name === "schedule") loadWeek();
   }
   document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => showTab(button.dataset.view)));
 
@@ -245,11 +247,8 @@
 
   let eventFeed = null, eventsError = false, eventsBusy = false, showPast = false;
   let telegramURL = 'https://t.me/sdu_hub_bot';
-  let results = [], selectedGroups = [], nextOffset = null, searchSequence = 0, scheduleMeta = null;
-  try {
-    const saved = JSON.parse(localStorage.getItem('sdu-week') || '[]');
-    if (Array.isArray(saved)) selectedGroups = saved.filter(g => typeof g.id === 'string' && /^[a-f0-9]{16}$/.test(g.id) && typeof g.course === 'string' && Array.isArray(g.sessions)).slice(0, 40);
-  } catch { /* Start with an empty timetable when storage is unavailable. */ }
+  let weekData = null, weekBusy = false, weekError = false, weekSequence = 0, requestedWeek = null;
+  let activeAccount = null, authPhase = 'credentials', authBusy = false;
   const days = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
   const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   const el = (tag, className, text) => {
@@ -279,7 +278,7 @@
     const url = new URL(data.telegram_url);
     if (url.protocol === 'https:' && url.hostname === 't.me') telegramURL = url.href;
     updateBotLinks();
-    renderSchedule();
+    renderWeek();
   }).catch(() => {});
 
   function eventCard(event) {
@@ -350,67 +349,125 @@
   $('events-all').addEventListener('click', () => { showPast = true; renderEvents(); });
   $('refresh-events').addEventListener('click', loadEvents);
 
-  function saveSelection() {
-    try { localStorage.setItem('sdu-week', JSON.stringify(selectedGroups)); } catch { /* Browsing remains functional without storage. */ }
+  function formatDate(value) {
+    const [year, month, day] = value.split('-');
+    return `${day}.${month}.${year}`;
   }
-  function toggleGroup(group) {
-    if (selectedGroups.some(g => g.id === group.id)) selectedGroups = selectedGroups.filter(g => g.id !== group.id);
-    else if (selectedGroups.length < 40) selectedGroups.push(group);
-    saveSelection(); renderSchedule();
+  function accountMessage(status) {
+    return t(({ ready: 'accountConnected', disconnected: 'accountDisconnected', expired: 'accountExpired', unavailable: 'accountUnavailable' })[status] || 'accountDisconnected');
   }
-  function sectionCard(group) {
-    const chosen = selectedGroups.some(g => g.id === group.id);
-    const card = el('article', 'section-card' + (chosen ? ' chosen' : ''));
-    card.append(el('h3', '', group.course + ' · ' + group.section), el('p', '', group.title), el('p', '', group.type));
-    group.sessions.forEach(s => card.append(el('p', '', `${t(dayKeys[days.indexOf(s.day)])} ${s.start}–${s.end} · ${s.room}`)));
-    const actions = el('div', 'actions');
-    const button = el('button', chosen ? 'button secondary' : 'button', t(chosen ? 'remove' : 'add'));
-    button.type = 'button'; button.addEventListener('click', () => toggleGroup(group));
-    const telegram = el('a', 'text-button', t('addTelegram')); telegram.href = botLink('section_' + group.id); telegram.target = '_blank'; telegram.rel = 'noopener noreferrer';
-    actions.append(button, telegram); card.append(actions); return card;
-  }
-  function renderSchedule() {
-    $('course-search').placeholder = t('searchPlaceholder');
-    const box = $('schedule-results'); box.replaceChildren();
-    results.forEach(group => box.append(sectionCard(group)));
+  function renderWeek() {
+    const connections = $('week-accounts'); connections.replaceChildren();
+    ['mysdu', 'moodle'].forEach(account => {
+      const status = weekData?.[account]?.status || 'disconnected';
+      const card = el('div', 'connection-card');
+      const info = el('div'); info.append(el('strong', '', account === 'mysdu' ? 'MySDU' : 'Moodle'), el('p', 'caption', accountMessage(status)));
+      const action = el('button', 'text-button', t(status === 'ready' || status === 'unavailable' ? 'accountDisconnect' : 'accountConnect'));
+      action.type = 'button'; action.disabled = weekBusy;
+      action.addEventListener('click', () => status === 'ready' || status === 'unavailable' ? disconnectAccount(account) : openAccount(account));
+      card.append(info, action); connections.append(card);
+    });
+    if (weekData) $('week-range').textContent = formatDate(weekData.week_start) + ' – ' + formatDate(weekData.week_end);
+    $('week-status').textContent = weekBusy ? t('weekLoading') : weekError ? t('weekLoadError') : '';
+    ['previous-week', 'current-week', 'next-week', 'refresh-week'].forEach(id => { $(id).disabled = weekBusy; });
     const week = $('my-week'); week.replaceChildren();
-    if (!selectedGroups.length) week.append(el('p', 'empty-state', t('emptySchedule')));
+    if (!weekData) { if (!weekBusy) week.append(el('p', 'empty-state', t('weekConnect'))); return; }
+    const lessons = weekData.mysdu.items || [], deadlines = weekData.moodle.items || [];
+    if (!lessons.length && !deadlines.length) {
+      const connected = weekData.mysdu.status === 'ready' || weekData.moodle.status === 'ready';
+      const failed = ['expired', 'unavailable'].some(status => weekData.mysdu.status === status || weekData.moodle.status === status);
+      week.append(el('p', 'empty-state', t(failed ? 'weekSourceError' : connected ? 'weekEmpty' : 'weekConnect')));
+      return;
+    }
+    const monday = new Date(weekData.week_start + 'T00:00:00Z');
     days.forEach((day, index) => {
-      const sessions = selectedGroups.flatMap(group => group.sessions.filter(s => s.day === day).map(s => ({ ...s, group })));
-      if (!sessions.length) return;
-      sessions.sort((a, b) => a.start.localeCompare(b.start));
-      const column = el('section', 'day-card'); column.append(el('h3', '', t(dayKeys[index])));
-      sessions.forEach(s => {
-        const lesson = el('article', 'lesson');
-        lesson.append(el('time', '', s.start + '–' + s.end), el('strong', '', s.group.course), el('p', '', s.group.type + ' · ' + s.group.section), el('p', '', s.room));
-        const remove = el('button', 'text-button', t('remove')); remove.addEventListener('click', () => toggleGroup(s.group)); lesson.append(remove); column.append(lesson);
+      const date = new Date(monday); date.setUTCDate(date.getUTCDate() + index);
+      const dateKey = date.toISOString().slice(0, 10);
+      const entries = [
+        ...lessons.filter(item => item.date === dateKey).map(item => ({ ...item, sort: item.start })),
+        ...deadlines.filter(item => item.due.slice(0, 10) === dateKey).map(item => ({ ...item, sort: item.due.slice(11, 16) }))
+      ].sort((a, b) => a.sort.localeCompare(b.sort));
+      if (!entries.length) return;
+      const column = el('section', 'day-card' + (dateKey === weekData.today ? ' today' : ''));
+      column.append(el('h3', '', t(dayKeys[index])), el('p', 'day-date caption', formatDate(dateKey)));
+      entries.forEach(item => {
+        const lesson = el('article', 'lesson' + (item.source === 'moodle' ? ' deadline-lesson' : ''));
+        const time = item.source === 'moodle' ? t('weekDue') + ' ' + item.sort : item.start + (item.end ? '–' + item.end : '');
+        lesson.append(el('span', 'source-label', item.source === 'moodle' ? 'Moodle' : 'MySDU'), el('time', '', time), el('strong', '', item.title || item.course));
+        if (item.title !== item.course) lesson.append(el('p', '', item.course));
+        if (item.source === 'mysdu') lesson.append(el('p', '', item.room || t('eventVenue')));
+        column.append(lesson);
       });
       week.append(column);
     });
-    if (scheduleMeta) $('term-info').textContent = `${t('updated')}: ${scheduleMeta.updated} · ${t('term')}: ${scheduleMeta.valid_until} · Asia/Almaty`;
-    $('more-sections').hidden = nextOffset === null;
   }
-  async function searchSchedule(append = false) {
-    const sequence = ++searchSequence;
-    const query = $('course-search').value.trim();
-    if (query.length < 2) return;
-    $('search-status').textContent = t('guideLoading');
-    const offset = append ? nextOffset : 0;
+  async function loadWeek() {
+    const sequence = ++weekSequence;
+    weekBusy = true; weekError = false; renderWeek();
     try {
-      const res = await fetch('/api/schedule?' + new URLSearchParams({ course: query, offset: String(offset || 0) }));
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      if (sequence !== searchSequence) return;
-      results = append ? [...results, ...data.groups] : data.groups;
-      // Refresh saved course sections against the latest campus export.
-      selectedGroups = selectedGroups.map(g => data.groups.find(fresh => fresh.id === g.id) || g);
-      saveSelection(); scheduleMeta = data; nextOffset = data.next_offset;
-      $('search-status').textContent = results.length ? t('availableSections') : t('noResults');
-      renderSchedule();
-    } catch { if (sequence === searchSequence) $('search-status').textContent = t('guideError'); }
+      const response = await fetch('/api/me/week' + (requestedWeek ? '?week=' + encodeURIComponent(requestedWeek) : ''), { cache: 'no-store', credentials: 'same-origin' });
+      if (!response.ok) throw new Error();
+      const data = await response.json();
+      if (sequence !== weekSequence) return;
+      weekData = data;
+    } catch { if (sequence === weekSequence) { weekError = true; weekData = null; } }
+    finally { if (sequence === weekSequence) { weekBusy = false; renderWeek(); } }
   }
-  $('schedule-search').addEventListener('submit', event => { event.preventDefault(); searchSchedule(); });
-  $('more-sections').addEventListener('click', () => searchSchedule(true));
+  function moveWeek(direction) {
+    if (!weekData) return;
+    const date = new Date(weekData.week_start + 'T00:00:00Z'); date.setUTCDate(date.getUTCDate() + direction * 7);
+    requestedWeek = date.toISOString().slice(0, 10); loadWeek();
+  }
+  $('previous-week').addEventListener('click', () => moveWeek(-1));
+  $('next-week').addEventListener('click', () => moveWeek(1));
+  $('current-week').addEventListener('click', () => { requestedWeek = null; loadWeek(); });
+  $('refresh-week').addEventListener('click', loadWeek);
+
+  function renderAccountDialog() {
+    $('account-brand').textContent = activeAccount === 'mysdu' ? 'MySDU' : 'Moodle';
+    $('account-dialog-title').textContent = t(authPhase === 'code' ? 'accountVerifyTitle' : 'accountSignIn');
+    $('account-description').textContent = t(authPhase === 'code' ? 'accountCodeHint' : activeAccount === 'mysdu' ? 'accountPortalHint' : 'accountMoodleHint');
+    $('account-username-label').textContent = t(activeAccount === 'mysdu' ? 'accountStudentId' : 'accountUsername');
+    $('credentials-fields').hidden = authPhase === 'code'; $('code-fields').hidden = authPhase !== 'code';
+    $('account-username').required = authPhase !== 'code'; $('account-password').required = authPhase !== 'code'; $('account-code').required = authPhase === 'code';
+    $('account-submit').textContent = t(authBusy ? 'accountSigningIn' : authPhase === 'code' ? 'accountVerify' : 'accountSignIn');
+    $('account-submit').disabled = authBusy;
+    $('close-account').setAttribute('aria-label', t('dismiss'));
+  }
+  function openAccount(account) {
+    activeAccount = account; authPhase = 'credentials'; $('account-form').reset(); $('account-error').textContent = '';
+    renderAccountDialog(); $('account-dialog').showModal(); $('account-username').focus();
+  }
+  $('close-account').addEventListener('click', () => $('account-dialog').close());
+  $('account-dialog').addEventListener('close', () => { $('account-form').reset(); $('account-error').textContent = ''; });
+  $('account-form').addEventListener('submit', async event => {
+    event.preventDefault(); if (authBusy) return;
+    authBusy = true; $('account-error').textContent = ''; renderAccountDialog();
+    const code = authPhase === 'code';
+    const payload = code ? { code: $('account-code').value.trim() } : { username: $('account-username').value.trim(), password: $('account-password').value };
+    // Remove secrets from the visible form immediately; they are sent only to the same-origin account endpoint.
+    $('account-password').value = ''; $('account-code').value = '';
+    try {
+      const response = await fetch('/api/me/' + activeAccount + (code ? '/code' : '/login'), {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-SDU-Hub': '1' }, body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const key = ({ bad_credentials: 'accountBadCredentials', bad_code: 'accountBadCode', session_expired: 'accountExpired', invalid_student_id: 'accountInvalidId', accounts_not_configured: 'accountNotConfigured' })[data.detail] || 'accountUnavailable';
+        throw new Error(t(key));
+      }
+      if (data.status === 'code_required') { authPhase = 'code'; renderAccountDialog(); $('account-code').focus(); }
+      else { $('account-dialog').close(); await loadWeek(); }
+    } catch (error) { $('account-error').textContent = error instanceof TypeError ? t('weekLoadError') : error.message; }
+    finally { payload.password = ''; payload.code = ''; authBusy = false; renderAccountDialog(); }
+  });
+  async function disconnectAccount(account) {
+    try {
+      const response = await fetch('/api/me/disconnect', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-SDU-Hub': '1' }, body: JSON.stringify({ account }) });
+      if (!response.ok) throw new Error();
+      await loadWeek();
+    } catch { $('week-status').textContent = t('weekLoadError'); }
+  }
   $('new-chat').addEventListener('click', () => {
     if (busy) return;
     history.length = 0; thread.replaceChildren(); $('empty').hidden = false; input.focus();

@@ -17,7 +17,9 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -26,6 +28,7 @@ import i18n
 import campus_events
 import rooms
 import student_schedule
+import web_accounts
 
 TELEGRAM_MODE = os.getenv("TELEGRAM_MODE", "off").strip().lower()  # off | webhook
 WEBHOOK_BASE = os.getenv("TELEGRAM_WEBHOOK_URL", "").strip().rstrip("/")
@@ -104,6 +107,25 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="University AI Knowledge Hub", lifespan=lifespan)
+app.include_router(web_accounts.router)
+
+
+@app.exception_handler(RequestValidationError)
+async def account_validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/api/me/"):
+        return JSONResponse(status_code=422, content={"detail": "invalid_input"},
+                            headers={"Cache-Control": "private, no-store"})
+    return await request_validation_exception_handler(request, exc)
+
+
+@app.middleware("http")
+async def private_account_responses(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/me/"):
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 # ------------------------------------------------------------------ API ----

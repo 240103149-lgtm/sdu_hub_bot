@@ -243,7 +243,8 @@ def parse_events(events: list[dict]) -> list[Deadline]:
 
 
 async def fetch_deadlines(session: dict, transport: httpx.AsyncBaseTransport | None = None,
-                          *, upcoming_only: bool = False) -> list[Deadline]:
+                          *, upcoming_only: bool = False,
+                          window: tuple[int, int] | None = None) -> list[Deadline]:
     """Everything the student still has to hand in, oldest first."""
     now = int(time.time())
     args = {
@@ -251,6 +252,8 @@ async def fetch_deadlines(session: dict, transport: httpx.AsyncBaseTransport | N
         "timesortto": now + LOOKAHEAD_DAYS * 86400,
         "limitnum": MAX_EVENTS,
     }
+    if window:
+        args["timesortfrom"], args["timesortto"] = window
     mode = session.get("mode")
     cookies = session.get("cookies") if mode == "web" else None
     async with _client(transport, cookies) as client:

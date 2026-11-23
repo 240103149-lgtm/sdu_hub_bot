@@ -30,6 +30,8 @@
           "notifications.py",
           "notifications_bot.py",
           "student_schedule.py",
+          "portal_schedule.py",
+          "web_accounts.py",
           "data/*.json",
           "locales/*.json",
           "static/**",
