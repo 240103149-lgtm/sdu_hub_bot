@@ -370,6 +370,8 @@ def guide_docx(source: str, title: str) -> bytes:
 
     for raw in source.splitlines():
         line = raw.rstrip()
+        if line.lstrip().startswith("<!--"):  # a note for editors, as on the website
+            continue
         if line.startswith("|"):
             cells = [_plain(cell) for cell in line.strip("|").split("|")]
             if not all(re.fullmatch(r":?-+:?", cell.replace(" ", "")) for cell in cells if cell):

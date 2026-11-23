@@ -162,6 +162,28 @@ class US2GuideRenderingTests(unittest.TestCase):
             self.assertLessEqual(telegram_bot.tg_len(chunk), telegram_bot.TELEGRAM_LIMIT)
         self.assertEqual(telegram_bot.strip_tags('<b>See</b> <a href="https://x.kz/?a=1&amp;b=2">x.kz</a>'), 'See x.kz')
 
+    def test_guide_is_published_in_every_interface_language(self):
+        """The website showed the English guide for KZ and RU too: every
+        language now has its own file, with the same structure."""
+        titles = {'kk': 'пәндерге тіркелу нұсқаулығы', 'ru': 'Руководство по регистрации',
+                  'en': 'Course Registration Guide'}
+        shapes = set()
+        for lang, title in titles.items():
+            guide = core.load_guide(lang)
+            self.assertIn(title, guide.splitlines()[0])
+            lines = [line.strip() for line in guide.splitlines() if line.strip() and not line.startswith('<!--')]
+            shapes.add((sum(line.startswith('#') for line in lines), sum(line.startswith('|') for line in lines),
+                        guide.count('](https://')))
+            joined = '\n'.join(telegram_bot.render_chunks(guide.strip()))
+            for leftover in ('**', '](', ':----', '<!--'):
+                self.assertNotIn(leftover, joined)
+        self.assertEqual(len(shapes), 1)  # same headings, table rows and links as the English original
+        # The AI reads the facts once, from the English original.
+        names = [path.name for path in core.knowledge_files()]
+        self.assertIn('registration_guide.md', names)
+        self.assertNotIn('registration_guide.kk.md', names)
+        self.assertNotIn('registration_guide.ru.md', names)
+
     def test_text_that_only_looks_like_markdown_stays_safe(self):
         self.assertEqual(telegram_bot.render_line('a | b'), 'a | b')
         self.assertEqual(telegram_bot.render_line('[x](javascript:alert(1))'), '[x](javascript:alert(1))')
@@ -203,6 +225,10 @@ class US2GuideFlowTests(BotHarness):
             with patch.object(core, 'load_guide', side_effect=core.GuideError('x')):
                 broken = await client.get('/api/guide?lang=en')
             ok = await client.get('/api/guide?lang=en')
+            kazakh = await client.get('/api/guide?lang=kk')
+            russian = await client.get('/api/guide?lang=ru')
+        self.assertTrue(kazakh.text.startswith('# SDU порталында пәндерге тіркелу нұсқаулығы'))
+        self.assertTrue(russian.text.startswith('# Руководство по регистрации на курсы'))
         self.assertEqual(missing.status_code, 404)
         self.assertIn('Инструкция для этого семестра', missing.json()['detail'])
         self.assertEqual(broken.status_code, 503)

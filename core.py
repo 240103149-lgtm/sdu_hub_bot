@@ -344,6 +344,14 @@ def read_document(path: Path) -> str:
     return text
 
 
+def _guide_translation(path: Path) -> bool:
+    """registration_guide.kk.md / .ru.md: the website and /guide show them, but
+    the AI already has the same facts from registration_guide.md, so they are
+    not added to its prompt a second and third time."""
+    return path.parent == KNOWLEDGE_DIR and any(
+        path.name.lower() == f"registration_guide.{lang}.md" for lang in LANGS)
+
+
 def knowledge_files() -> list[Path]:
     """Every approved document under knowledge/, subfolders included."""
     if not KNOWLEDGE_DIR.exists():
@@ -356,6 +364,7 @@ def knowledge_files() -> list[Path]:
         and not path.name.startswith("_")            # drafts you park here
         and path.name.lower() not in KNOWLEDGE_IGNORED
         and path.suffix.lower() in KNOWLEDGE_SUFFIXES
+        and not _guide_translation(path)
     )
 
 
