@@ -378,7 +378,8 @@
   }
   function openCalendarDay(dateKey) {
     const detail = $('calendar-detail'); detail.replaceChildren(); detail.hidden = false;
-    detail.append(el('h3', '', new Intl.DateTimeFormat(lang === 'kk' ? 'kk-KZ' : lang, { dateStyle: 'full', timeZone: 'UTC' }).format(new Date(dateKey + 'T12:00:00Z'))));
+    const day = new Date(dateKey + 'T12:00:00Z');
+    detail.append(el('h3', '', day.getUTCDate() + ' ' + t('calendarMonths')[day.getUTCMonth()] + ' ' + day.getUTCFullYear()));
     const entries = monthEntries().filter(item => item.date === dateKey).sort((a, b) => a.sort.localeCompare(b.sort));
     if (!entries.length) detail.append(el('p', 'caption', t(['mysdu', 'moodle'].some(source => weekData?.[source]?.status === 'unavailable') ? 'weekSourceError' : 'calendarDayEmpty')));
     entries.forEach(item => {
@@ -406,7 +407,7 @@
     });
     const firstKey = weekData?.month_start || requestedWeek || new Date().toISOString().slice(0, 7) + '-01';
     const first = new Date(firstKey + 'T12:00:00Z');
-    $('week-range').textContent = new Intl.DateTimeFormat(lang === 'kk' ? 'kk-KZ' : lang, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(first);
+    $('week-range').textContent = t('calendarMonths')[first.getUTCMonth()] + ' ' + first.getUTCFullYear();
     const errors = ['mysdu', 'moodle'].filter(account => ['unavailable', 'code_required', 'permission_required', 'not_configured'].includes(weekData?.[account]?.status)).map(account => weekData[account].status === 'not_configured' ? t('oauthStorageRequired') : weekData[account].status === 'code_required' ? t('portalCodeRequired') : weekData[account].status === 'permission_required' ? t('portalPermissionRequired') : t('sourceUnavailable').replace('{source}', account === 'mysdu' ? 'MySDU' : 'Moodle'));
     if (oauthNotice) errors.push(oauthNotice);
     $('week-status').textContent = weekBusy ? t('weekLoading') : weekError ? t('weekLoadError') : errors.join(' ');
@@ -414,7 +415,7 @@
     ['previous-week', 'current-week', 'next-week', 'refresh-week'].forEach(id => { $(id).disabled = weekBusy; });
     const grid = $('my-week'); grid.replaceChildren();
     const heading = el('div', 'calendar-weekdays');
-    for (let i = 0; i < 7; i++) heading.append(el('span', '', new Intl.DateTimeFormat(lang === 'kk' ? 'kk-KZ' : lang, { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 10, 23 + i)))));
+    t('calendarWeekdays').forEach(day => heading.append(el('span', '', day)));
     grid.append(heading);
     const cells = el('div', 'calendar-cells'); grid.append(cells);
     const offset = (first.getUTCDay() + 6) % 7;

@@ -381,7 +381,7 @@
     "mySections": "Your week",
     "chatEyebrow": "A good place to ask.",
     "chatTitle": "A little clarity.\nWhenever you need it.",
-    "chatNote": "Your classes and Moodle deadlines are in My week. Grades and automatic reminders are available in the Telegram bot.",
+    "chatNote": "Ask about events, canteen prices, classes and deadlines. Personal information comes only from your own connected accounts.",
     "newChat": "New conversation",
     "guideTitle": "Your next semester.\nStep by step.",
     "footer": "An independent student project. University information comes from published SDU sources.",
@@ -444,7 +444,30 @@
     "oauthStorageRequired": "SDU authorization storage is not configured. The administrator must add the OAuth storage variables in Vercel.",
     "portalCodeRequired": "MySDU requires a verification code. Reconnect through Connect MySDU.",
     "portalPermissionRequired": "Permission to read MySDU data is missing. Reconnect your account.",
-    "oauthDenied": "SDU connection was cancelled."
+    "oauthDenied": "SDU connection was cancelled.",
+    "calendarMonths": [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December"
+    ],
+    "calendarWeekdays": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ]
   },
   "login": {
     "menu": "Sign in",
