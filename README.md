@@ -535,3 +535,28 @@ Commit/branch дереккөздері мен өзгерістер: [INTEGRATION
 `/help` ішінде әңгіме тарихын тазарту, кіруді тоқтату және аккаунттарды ажырату
 командалары жеке бөлімге жинақталған. Тілді ауыстырғанда негізгі мәзір де сол
 тілде қайта көрсетіледі. Бағалар мен Moodle кіруі тек жеке чатта орындалады.
+
+
+### Automatic personal timetable reminders
+
+A linked MySDU account now supplies the student's own Course Schedule for
+15-minute class reminders and the **My timetable** card. Manual campus-section
+selection remains available for students without a linked portal. Linked Moodle
+accounts enable 12-hour deadline reminders by default. An explicit Off preference
+is always respected. Toggle and timetable buttons edit the existing Telegram card
+and acknowledge the callback silently.
+
+Delivery requires the existing continuously running scheduler. On Railway,
+Render or a VPS, run `python bot.py` with `REMINDERS_ENABLED=on` and
+`BOT_STATE_PATH` pointing to a durable mounted volume. Install `requirements.txt`
+and configure `TELEGRAM_BOT_TOKEN` and the AI environment variables as above.
+If moving from a Vercel webhook to polling, remove the old Telegram webhook
+before starting the polling worker; only one worker may consume updates.
+Alternatively, use the existing persistent FastAPI webhook mode. The Vercel
+website may remain deployed independently with `TELEGRAM_MODE=off`.
+
+Vercel functions cannot keep the minute scheduler running, and their `/tmp`
+state does not survive reliably. Deploying this code to Vercel alone therefore
+**does not enable automatic delivery**. The paused-service message remains visible
+there until the bot runs on a persistent host. Do not remove that guard or run
+an independent cron against ephemeral state: reminders could be missed or repeated.

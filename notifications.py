@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import time
 from datetime import datetime
 
 from telegram.error import Forbidden, TelegramError
@@ -14,9 +15,52 @@ import i18n
 import moodle
 import rooms
 import student_schedule
+import grade
+import portal_schedule
 
 log = logging.getLogger(__name__)
 _limit = asyncio.Semaphore(5)
+
+
+def enabled(data, key):
+    """Linked accounts enable reminders unless the student explicitly opts out."""
+    if key == "class_notifications":
+        default = bool(data.get("portal") or data.get("schedule_groups"))
+    else:
+        default = bool(data.get("moodle"))
+    return bool(data.get(key, default))
+
+
+async def personal_classes(data):
+    portal = data.get("portal")
+    if not portal:
+        return []
+    signature = hashlib.sha256(repr((portal.get("student_id"), sorted((portal.get("cookies") or {}).items()))).encode()).hexdigest()
+    cache = data.get("personal_schedule_cache", {})
+    if cache.get("session") == signature and 0 <= time.time() - cache.get("fetched", 0) < 900:
+        return cache["items"]
+    async with _limit:
+        items = await portal_schedule.fetch_schedule(portal.get("cookies") or {})
+    if data.get("portal") != portal:
+        return []
+    data["personal_schedule_cache"] = {"session": signature, "fetched": time.time(), "items": items}
+    return items
+
+
+def upcoming_personal(items, now):
+    if not student_schedule.active(now.date()):
+        return []
+    result = []
+    for item in items:
+        if item["day"] != rooms.DAYS[now.weekday()]:
+            continue
+        hour, minute = map(int, item["start"].split(":"))
+        moment = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if 0 < (moment - now).total_seconds() <= 900:
+            identity = f"{item['course']}|{item.get('section', '')}|{moment.isoformat()}"
+            result.append({**item, "key": "class:portal:" + hashlib.sha256(identity.encode()).hexdigest(),
+                           "at": int(moment.timestamp())})
+    return result
 
 
 def deadline_key(item: moodle.Deadline) -> str:
@@ -36,20 +80,24 @@ async def check_user(app, user_id: int, now: datetime) -> None:
         if sent[key] < stamp - 86400:
             del sent[key]
     messages = []
-    if data.get("class_notifications") and data.get("schedule_groups"):
+    if enabled(data, "class_notifications"):
         try:
-            for item in student_schedule.upcoming(data["schedule_groups"], now):
+            if data.get("portal"):
+                items = upcoming_personal(await personal_classes(data), now)
+            else:
+                items = student_schedule.upcoming(data.get("schedule_groups", []), now)
+            for item in (items if enabled(data, "class_notifications") else []):
                 messages.append((item["key"], item["at"], labels["class_message"].format(
                     course=item["title"], time=item["start"], room=item["room"] or labels["tbc"])))
-        except (rooms.ScheduleError, OSError, ValueError):
+        except (grade.PortalError, rooms.ScheduleError, OSError, ValueError):
             log.warning("Class reminders skipped: timetable unavailable")
     session = data.get("moodle")
-    if data.get("deadline_notifications") and session:
+    if enabled(data, "deadline_notifications") and session:
         try:
             async with _limit:
                 items = await moodle.fetch_deadlines(session, upcoming_only=True)
-            if data.get("moodle") != session or not data.get("deadline_notifications"):
-                return
+            if data.get("moodle") != session or not enabled(data, "deadline_notifications"):
+                items = []
             for item in items:
                 remaining = item.due - stamp
                 if 0 < remaining <= 12 * 3600 and item.kind.lower() in ("", "due", "close"):
@@ -66,6 +114,10 @@ async def check_user(app, user_id: int, now: datetime) -> None:
             else:
                 log.warning("Deadline reminders skipped: Moodle unavailable")
     for key, event_time, text in messages:
+        if key.startswith("class:") and not enabled(data, "class_notifications"):
+            continue
+        if key.startswith("deadline:") and not enabled(data, "deadline_notifications"):
+            continue
         if key in sent:
             continue
         try:
@@ -84,7 +136,7 @@ async def tick(context) -> None:
     app = context.application
     now = datetime.now(rooms.CAMPUS_TZ)
     users = [uid for uid, data in app.user_data.items()
-             if data.get("class_notifications") or data.get("deadline_notifications")]
+             if enabled(data, "class_notifications") or enabled(data, "deadline_notifications")]
     # Batch users so a large installation doesn't create an unbounded task list.
     for offset in range(0, len(users), 20):
         results = await asyncio.gather(*(check_user(app, uid, now) for uid in users[offset:offset + 20]),

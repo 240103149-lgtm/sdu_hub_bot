@@ -169,10 +169,10 @@ class TelegramToolbox:
 
         query = str(args.get("course") or "")[:100]
         self.context.user_data["schedule_search"] = query
-        card, keyboard = notifications_bot.schedule_card(self.context.user_data, lang, query)
+        card, keyboard = await notifications_bot.personal_schedule_card(self.context.user_data, lang, query)
         self.cards.append(Card(card, keyboard))
         return assistant.ToolResult({"selected_sections": self.context.user_data.get("schedule_groups", []),
-                                     "note": "Use section buttons to add/remove; a section enables 15-minute class reminders."},
+                                     "note": "A linked portal supplies the personal timetable automatically; otherwise select sections."},
                                     summary="[shown: personal timetable and section selection]")
 
     async def tool_get_reminder_settings(self, args: dict, lang: str) -> assistant.ToolResult:
@@ -182,8 +182,8 @@ class TelegramToolbox:
 
         card, keyboard = notifications_bot.settings(self.context.user_data, lang)
         self.cards.append(Card(card, keyboard))
-        return assistant.ToolResult({"deadline_reminders": bool(self.context.user_data.get("deadline_notifications")),
-                                     "class_reminders": bool(self.context.user_data.get("class_notifications"))},
+        return assistant.ToolResult({"deadline_reminders": notifications_bot.notifications.enabled(self.context.user_data, "deadline_notifications"),
+                                     "class_reminders": notifications_bot.notifications.enabled(self.context.user_data, "class_notifications")},
                                     summary="[shown: reminder settings; use buttons to change]")
 
     async def tool_get_my_grades(self, args: dict, lang: str) -> assistant.ToolResult:

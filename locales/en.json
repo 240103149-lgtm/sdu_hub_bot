@@ -512,7 +512,9 @@
     "deadline_message": "⏰ Deadline reminder\n{course} · {title}\nDue: {due}\nRemaining: {hours}h {minutes}m",
     "session_expired": "🔐 Your Moodle session expired. Relink it in /account to resume deadline reminders.",
     "tbc": "To be confirmed",
-    "service_paused": "Automatic reminders are currently paused for this bot. Your preferences are saved; delivery resumes when the reminder service is available."
+    "service_paused": "Automatic reminders are currently paused for this bot. Your preferences are saved; delivery resumes when the reminder service is available.",
+    "portal_schedule": "Your MySDU timetable is used automatically for class reminders. You can switch reminders off below.",
+    "empty_portal_schedule": "Your MySDU timetable has no classes."
   },
   "life": {
     "title": "Campus, happening now.",
