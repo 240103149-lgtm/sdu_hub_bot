@@ -17,6 +17,8 @@ from telegram.error import NetworkError
 from telegram.ext import PicklePersistence
 
 import campus_events
+import grade
+import portal_schedule
 import moodle
 import notifications
 import rooms
@@ -105,6 +107,57 @@ class ReminderTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.bot.send_message.await_count, 2)
 
 
+    async def test_portal_schedule_is_automatic_cached_and_deduplicated(self):
+        data = {'portal': {'student_id': '123', 'cookies': {'sid': 'one'}},
+                'schedule_groups': [GROUP['id']]}
+        app = fake_app(data)
+        lesson = {**GROUP['sessions'][0], 'course': 'INF 345', 'title': 'Personal course', 'section': '02-P'}
+        with patch.object(portal_schedule, 'fetch_schedule', new=AsyncMock(return_value=[lesson])) as fetch, patch.object(
+                student_schedule, 'upcoming') as fallback:
+            await notifications.check_user(app, 42, NOW - timedelta(seconds=1))
+            app.bot.send_message.assert_not_awaited()
+            await notifications.check_user(app, 42, NOW)
+            await notifications.check_user(app, 42, NOW + timedelta(minutes=1))
+            fetch.assert_awaited_once()
+            fallback.assert_not_called()
+            app.bot.send_message.assert_awaited_once()
+            self.assertIn('Personal course', app.bot.send_message.call_args.kwargs['text'])
+            self.assertIn('G107', app.bot.send_message.call_args.kwargs['text'])
+            data['class_notifications'] = False
+            await notifications.check_user(app, 42, NOW + timedelta(days=7))
+            app.bot.send_message.assert_awaited_once()
+
+    async def test_personal_cache_invalidated_on_relink_and_expiry(self):
+        data = {'portal': {'cookies': {'sid': 'one'}}}
+        with patch.object(portal_schedule, 'fetch_schedule', new=AsyncMock(return_value=[])) as fetch, patch.object(
+                notifications.time, 'time', return_value=1000) as clock:
+            await notifications.personal_classes(data)
+            await notifications.personal_classes(data)
+            self.assertEqual(fetch.await_count, 1)
+            data['portal'] = {'cookies': {'sid': 'two'}}
+            await notifications.personal_classes(data)
+            self.assertEqual(fetch.await_count, 2)
+            clock.return_value = 1901
+            await notifications.personal_classes(data)
+            self.assertEqual(fetch.await_count, 3)
+
+    async def test_portal_failure_never_uses_university_sections(self):
+        app = fake_app({'portal': {'cookies': {}}, 'schedule_groups': [GROUP['id']]})
+        with patch.object(portal_schedule, 'fetch_schedule', new=AsyncMock(side_effect=grade.PortalError('session_expired'))), patch.object(
+                student_schedule, 'upcoming') as fallback:
+            await notifications.check_user(app, 42, NOW)
+            fallback.assert_not_called()
+            app.bot.send_message.assert_not_awaited()
+
+    async def test_tick_includes_linked_users_without_explicit_preferences(self):
+        app = fake_app({'portal': {'cookies': {'sid': 'one'}}})
+        app.update_persistence = AsyncMock()
+        with patch.object(notifications, 'check_user', new=AsyncMock()) as check:
+            await notifications.tick(SimpleNamespace(application=app))
+            self.assertEqual(check.await_args.args[1], 42)
+        app.update_persistence.assert_awaited_once()
+
+
 class ReminderRoutingTests(BotHarness):
     async def test_schedule_selection_settings_and_user_isolation(self):
         with patch.object(student_schedule, 'groups', return_value=[GROUP]):
@@ -119,6 +172,33 @@ class ReminderRoutingTests(BotHarness):
             self.assertFalse(self.app.user_data[42]['class_notifications'])
             await self.tap('schedule:toggle:' + GROUP['id'])
             self.assertEqual(self.app.user_data[42]['schedule_groups'], [])
+
+    async def test_buttons_edit_existing_card_without_confirmation_messages(self):
+        await self.text('/notifications')
+        sent = self.send.await_count
+        await self.tap('notify:class')
+        self.assertEqual(self.send.await_count, sent)
+        self.assertTrue(self.app.user_data[42]['class_notifications'])
+        keyboard = self.edit.call_args.kwargs['reply_markup']
+        self.assertIn('On', keyboard.inline_keyboard[1][0].text)
+        self.answer.assert_awaited()
+        self.assertTrue(all(not call.kwargs.get('text') for call in self.answer.call_args_list))
+        await self.tap('notify:class')
+        self.assertEqual(self.send.await_count, sent)
+        self.assertFalse(self.app.user_data[42]['class_notifications'])
+
+    async def test_schedule_displays_portal_classes_without_section_selection(self):
+        self.app.user_data[42]['portal'] = {'cookies': {'sid': 'one'}}
+        lesson = {**GROUP['sessions'][0], 'course': 'INF 345', 'title': 'My course', 'section': '02-P'}
+        with patch.object(portal_schedule, 'fetch_schedule', new=AsyncMock(return_value=[lesson])):
+            await self.text('/schedule')
+        self.assertIn('INF 345', self.last_text())
+        self.assertIn('G107', self.last_text())
+        self.assertNotIn('schedule_groups', self.app.user_data[42])
+        sent = self.send.await_count
+        await self.tap('notify:class')
+        self.assertFalse(self.app.user_data[42]['class_notifications'])
+        self.assertEqual(self.send.await_count, sent)
 
     async def test_start_deep_link_opens_choice_without_subscribing(self):
         with patch.object(student_schedule, 'groups', return_value=[GROUP]):
