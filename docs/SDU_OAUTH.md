@@ -22,7 +22,11 @@ transcript tools continue to use the student's own linked portal session.
 Keep `WEB_SESSION_SECRET` stable and secret (existing fallback:
 `TELEGRAM_BOT_TOKEN`). Configure a durable Redis REST database with
 `SDU_OAUTH_REDIS_URL` and `SDU_OAUTH_REDIS_TOKEN` in Vercel environment settings,
-then redeploy. Never send these secret values through chat or commit them.
+then redeploy. Simplest: Vercel → Storage → Upstash for Redis → Connect Project;
+the `KV_REST_API_URL`/`KV_REST_API_TOKEN` it sets are used when the
+`SDU_OAUTH_REDIS_*` pair is empty, and the same database keeps the Telegram
+bot's state (README, "Ескертулер Vercel-де"). Never send these secret values
+through chat or commit them.
 `SDU_OAUTH_CLIENT_ID` and `SDU_OAUTH_REDIRECT_URI` may override the public config.
 Production callback must exactly match the registered URL, including its path.
 

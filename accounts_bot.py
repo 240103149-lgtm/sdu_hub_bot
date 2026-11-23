@@ -42,6 +42,7 @@ async def clear_login(update, context):
     deadline._close_flow(update.effective_user.id, context)
     context.user_data.pop("login_flow", None)
     context.user_data.pop("login_started", None)
+    login_guard.note_signin_closed(context.user_data)
 
 
 def entry(feature, callback):
@@ -50,6 +51,7 @@ def entry(feature, callback):
         await clear_login(update, context)
         context.user_data["login_flow"] = feature
         context.user_data["login_started"] = time.monotonic()
+        login_guard.note_signin_started(context.user_data)
         state = await callback(update, context)
         if state == ConversationHandler.END:
             await clear_login(update, context)

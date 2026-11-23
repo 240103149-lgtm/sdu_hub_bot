@@ -83,6 +83,32 @@ def note_signed_in(user_data: dict) -> None:
     user_data.pop("signin_failed_at", None)
 
 
+SIGNIN_WINDOW = 600  # seconds a sign-in may wait for its next step (accounts_bot.FLOW_TTL)
+
+
+def note_signin_started(user_data: dict) -> None:
+    """A sign-in conversation began. Wall-clock time: unlike time.monotonic(),
+    it means the same on every server instance."""
+    user_data["signin_started_at"] = time.time()
+
+
+def note_signin_closed(user_data: dict) -> None:
+    user_data.pop("signin_started_at", None)
+
+
+def interrupted_signin(user_data: dict, text: str | None) -> bool:
+    """True for a student number, username or password that reached the chat
+    because the sign-in step itself was lost.
+
+    On Vercel a pause can move the next message to a new server instance that
+    has the student's saved data (bot_store) but not the conversation step,
+    so without this the password would go to the AI like a question.
+    """
+    started = user_data.get("signin_started_at")
+    return (isinstance(started, (int, float)) and 0 <= time.time() - started <= SIGNIN_WINDOW
+            and looks_like_password(text))
+
+
 def looks_like_password(text: str | None) -> bool:
     """One word with a digit or a symbol: "Qwerty123!" - not "GPA?" or "Почему?"."""
     word = (text or "").strip().rstrip("?")

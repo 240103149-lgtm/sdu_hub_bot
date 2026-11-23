@@ -1,0 +1,41 @@
+# Vercel keeps no process running between requests, so nothing there can wait
+# for "15 minutes before class". Every 5 minutes this wakes the bot's reminder
+# check (POST /api/cron/reminders). See README, "Ескертулер Vercel-де".
+#
+# Until Redis (Vercel -> Storage -> Upstash for Redis) is connected, the site
+# answers "skipped" and nothing is sent. Optional: set the same random
+# CRON_SECRET in Vercel (Environment Variables) and here (Settings -> Secrets
+# and variables -> Actions); REMINDERS_URL (a repository variable) overrides
+# the address.
+name: Reminders
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: reminders
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wake the reminder check
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          REMINDERS_URL: ${{ vars.REMINDERS_URL || 'https://sdu-hub-bot.vercel.app/api/cron/reminders' }}
+        run: |
+          args=(-sS -o response.json -w '%{http_code}' -m 120 -X POST)
+          if [ -n "$CRON_SECRET" ]; then args+=(-H "Authorization: Bearer $CRON_SECRET"); fi
+          status=$(curl "${args[@]}" "$REMINDERS_URL") || status=000
+          echo "HTTP $status"
+          cat response.json 2>/dev/null || true
+          echo
+          # A failed check is shown here and as "paused" in the bot's /notify,
+          # not as a failed run: a failure e-mail every 5 minutes helps nobody.
+          if [ "$status" != "200" ]; then
+            echo "::warning::The reminder check answered HTTP $status"
+          elif grep -q '"skipped"' response.json; then
+            echo "::notice::Reminder check skipped: $(cat response.json)"
+          fi

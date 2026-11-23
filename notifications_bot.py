@@ -16,7 +16,10 @@ def labels(lang):
     return i18n.section(lang, "notifications")
 
 
-def settings(data, lang):
+def settings(data, lang, paused=False):
+    """The reminder card. `paused`: nothing will deliver later (see
+    notifications.delivery_paused), so the card says so instead of implying
+    that a switched-on reminder will arrive."""
     t = labels(lang)
     state = lambda key: t["on"] if notifications.enabled(data, key) else t["off"]
     keyboard = [
@@ -27,7 +30,10 @@ def settings(data, lang):
         keyboard.append([InlineKeyboardButton(t["connect_portal"], callback_data="notify:link_portal")])
     if not data.get("moodle"):
         keyboard.append([InlineKeyboardButton(t["connect_moodle"], callback_data="notify:link_moodle")])
-    return t["settings"] + "\n\n" + t["timing_short"], InlineKeyboardMarkup(keyboard)
+    text = t["settings"] + "\n\n" + t["timing_short"]
+    if paused:
+        text += "\n\n⚠️ " + t["service_paused"]
+    return text, InlineKeyboardMarkup(keyboard)
 
 
 async def render_card(update, text, keyboard):
@@ -46,7 +52,7 @@ async def cmd_notifications(update, context):
     if update.effective_chat.type != "private":
         await reply(update.effective_message, labels(lang)["private"])
         return
-    text, keyboard = settings(context.user_data, lang)
+    text, keyboard = settings(context.user_data, lang, paused=await notifications.delivery_paused())
     await render_card(update, text, keyboard)
 
 

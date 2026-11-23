@@ -49,8 +49,13 @@ def cipher():
 class Store:
     """Encrypted server records. Redis REST for Vercel; SQLite for a durable host/dev."""
     def __init__(self):
-        self.url = os.getenv('SDU_OAUTH_REDIS_URL', '').rstrip('/')
-        self.token = os.getenv('SDU_OAUTH_REDIS_TOKEN', '')
+        import bot_store
+        # SDU_OAUTH_REDIS_* or the names Vercel's Upstash integration sets
+        # (KV_REST_API_*): one database serves the bot state and OAuth.
+        self.url = os.getenv('SDU_OAUTH_REDIS_URL', '').strip().rstrip('/')
+        self.token = os.getenv('SDU_OAUTH_REDIS_TOKEN', '').strip()
+        if not (self.url and self.token) and bot_store.redis_config():
+            self.url, self.token = bot_store.redis_config()
         if os.getenv('VERCEL') and not (self.url and self.token):
             # Never claim that a temporary Vercel filesystem is durable storage.
             raise HTTPException(503, detail='oauth_storage_not_configured')

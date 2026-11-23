@@ -12,9 +12,11 @@ same process - useful once the project is deployed behind an HTTPS domain.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -23,6 +25,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import bot_store
 import core
 import i18n
 import campus_events
@@ -231,6 +234,8 @@ def health():
         "model": core.MODEL,
         "documents": [path.name for path in core.knowledge_files()],
         "telegram": TELEGRAM_MODE,
+        # "redis": settings and reminders survive Vercel cold starts (bot_store).
+        "bot_state": "redis" if bot_store.current() else "memory",
     }
 
 
@@ -254,8 +259,44 @@ async def telegram_webhook(
     update = TelegramUpdate.de_json(await request.json(), telegram_app.bot)
     # ConversationHandler requires sequential updates, including webhook requests.
     async with _telegram_update_lock:
-        await telegram_app.process_update(update)
+        # With Redis (bot_store) the student's settings and linked accounts
+        # survive Vercel cold starts and are seen by the reminder check.
+        async with bot_store.synced(telegram_app, update):
+            await telegram_app.process_update(update)
     return {"ok": True}
+
+
+@app.api_route("/api/cron/reminders", methods=["GET", "POST"])
+async def reminders_cron(authorization: str | None = Header(default=None)):
+    """Run one reminder check (US14/US15) on a host without a minute timer.
+
+    Vercel keeps no process alive, so .github/workflows/reminders.yml calls
+    this every 5 minutes (any other scheduler can too). It needs the durable
+    bot state in Redis (bot_store); until that exists it answers "skipped".
+    When CRON_SECRET is set, the caller must send "Authorization: Bearer
+    <CRON_SECRET>". A call within 50 seconds of the last one does nothing, and
+    the answer holds counts only, never student data.
+    """
+    import notifications
+
+    secret = os.getenv("CRON_SECRET", "").strip()
+    if secret and not hmac.compare_digest((authorization or "").encode(), f"Bearer {secret}".encode()):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    if os.getenv("REMINDERS_ENABLED", "on").strip().lower() == "off":
+        return {"status": "skipped", "reason": "reminders_disabled"}
+    if TELEGRAM_MODE != "webhook":
+        return {"status": "skipped", "reason": "telegram_webhook_off"}
+    store = bot_store.current()
+    if store is None:
+        return {"status": "skipped", "reason": "storage_not_configured"}
+    try:
+        if not await store.begin_tick():
+            return {"status": "skipped", "reason": "ran_recently"}
+        telegram_app = await _get_telegram_app()
+        result = await notifications.durable_tick(telegram_app.bot, store, datetime.now(rooms.CAMPUS_TZ))
+    except bot_store.StoreError:
+        raise HTTPException(status_code=503, detail="storage_unavailable") from None
+    return {"status": "ok", **result}
 
 
 # --------------------------------------------------------------- website ----

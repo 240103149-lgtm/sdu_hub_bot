@@ -6,6 +6,7 @@
       "config": {
         "includeFiles": [
           "core.py",
+          "bot_store.py",
           "i18n.py",
           "main.py",
           "telegram_bot.py",

@@ -1,11 +1,21 @@
 # University AI Knowledge Hub — Telegram бот + сайт
 
+## 23.11.2026 (кеш) — ескертулер Vercel-де, нұсқаулық үш тілде
+
+- **Ескертулер Vercel-де жұмыс істемейтін.** Vercel-де тұрақты процесс жоқ: минут сайын тексеретін таймер ол жерде мүлде қосылмайтын, ал боттың жадысы (`/tmp`) әр cold start сайын өшетін. Сондықтан `/notify` «Қосулы» дегенімен, ескерту тек қосқан сәтте ғана келетін. Енді:
+  - Redis (Upstash) қосылса, әр студенттің баптауы, байланысқан аккаунттары мен тілі Redis-те **шифрланып** сақталады (`bot_store.py`) — cold start-тан кейін де ұмытылмайды.
+  - `.github/workflows/reminders.yml` әр 5 минут сайын `POST /api/cron/reminders` шақырады; ол Redis-тегі жазылушыларды тексеріп, ескертуді жібереді. Әр ескерту Redis-те алдын ала «брондалады», сондықтан екі тексеру қатар жүрсе де қайталанбайды.
+  - Redis әлі жоқ болса немесе тексеру соңғы 20 минутта жүрмесе, `/notify` карточкасы «ескертулер уақытша тоқтатылған» деп ашық жазады — «Қосулы» батырмасы бос уәде бермейді.
+- **Іске қосу (бір рет):** Vercel → Storage → Create Database → **Upstash for Redis** (тегін жоспар) → Connect Project (`KV_REST_API_URL`, `KV_REST_API_TOKEN` өздігінен қосылады) → Redeploy. Тексеру: `https://sdu-hub-bot.vercel.app/api/health` ішінде `"bot_state": "redis"`. Қосымша қауіпсіздік: бірдей кездейсоқ `CRON_SECRET` мәнін Vercel env-ге және GitHub → Settings → Secrets and variables → Actions-қа қосыңыз. Сол Redis сайттағы «Connect MySDU» (SDU Platform OAuth) үшін де жарайды.
+- **Сайттағы «Нұсқаулық» енді үш тілде:** `knowledge/registration_guide.kk.md` және `.ru.md` қосылды (бұрын тек ағылшынша файл болған). Портал батырмалары мен хабарламалары порталдағыдай ағылшынша қалды. Ағылшынша нұсқа өзгерсе, аудармаларды да жаңартыңыз. Аудармалар AI промптына қайталанып қосылмайды. Telegram-дағы толық нұсқаулық файлы да студенттің тілінде.
+- **Аудит түзетулері:** сайт күнтізбесіндегі Moodle «орындалды» белгісі қате ID-мен (`instance`) тексерілетін — енді әрекеттің `view.php?id=<cmid>` сілтемесінен алынады; айлық күнтізбе семестр біткеннен кейін (`data/schedule_meta.json`, 12.12.2026) сабақ көрсетпейді; Word-тағы нұсқаулыққа редактор түсініктемесі түспейді; `vercel.json`-да барлық модуль бар екенін тест тексереді.
+
 ## 23.11.2026 — соңғы өзгерістер
 
 - **SDU Life ивенттері** бот пен сайтқа ортақ қосылды: ашық беттегі нақты күн, уақыт, орын, сипаттама және постер. Кэш — 5 минут; уақытша ақауда соңғы дерек 1 сағатқа дейін «ескірген» белгісімен көрсетіледі. Ботта ескі `campus_events.md` резерві сақталған.
 - **US14:** Moodle дедлайнына 12 сағат қалғанда Telegram ескертуі. **US15:** MySDU-дағы жеке сабаққа 15 минут қалғанда пән мен аудитория. Баптау: **Аккаунт → Ескертулер** немесе `/notify`. Жеке сабақ кестесі: **Аккаунт → Менің кестем** немесе `/schedule`. Секцияны қолмен таңдау қажет емес.
 - **Apple стиліне жақын сайт:** жаңа басты бет, ассистент, тірі ивенттер, жеке апталық кесте, нұсқаулық; үш тіл және телефонға бейімделген. «Менің аптам» енді MySDU-дағы жеке сабақтар мен Moodle дедлайндарын аккаунтқа кіргеннен кейін автоматты жүктейді. Іздеу, секцияны қолмен қосу және браузерде жеке кесте құрастыру алынды.
-- **Ескертулерге тұрақты процесс қажет.** Сайттың қазіргі Vercel деплойы API мен бетті көрсетеді; Vercel-де фондық scheduler өшірулі. Автоматты ескертуді іске қосу үшін бір ғана `python bot.py` процесін немесе төмендегі тұрақты webhook хостын іске қосып, `bot_state.pickle` файлын тұрақты дискіде сақтаңыз. Жаңа тәуелділікті `pip install -r requirements.txt` арқылы орнатыңыз.
+- **Ескертулерге тұрақты процесс қажет** (кешкі жаңарту: енді Vercel-де Redis + әр 5 минуттық тексеру арқылы да жұмыс істейді, жоғарыны қараңыз). Тұрақты хостта бір ғана `python bot.py` процесін немесе тұрақты webhook хостын іске қосып, `bot_state.pickle` файлын тұрақты дискіде сақтаңыз. Жаңа тәуелділікті `pip install -r requirements.txt` арқылы орнатыңыз.
 
 User story талаптары және іске қосу: [docs/USER_STORIES.md](docs/USER_STORIES.md). Сайттағы жеке кесте: [docs/PERSONAL_WEEK.md](docs/PERSONAL_WEEK.md).
 
@@ -259,9 +269,11 @@ Vercel — serverless: тұрақты процесс жоқ, әр сұраныс
   `TELEGRAM_MODE=webhook` арқылы жұмыс істейді.
 - **`bot_state.pickle` тұрақты сақталмайды.** Vercel-дің файл жүйесі
   тек `/tmp`-ке жазуға рұқсат етеді, ол да cold start сайын өшіп кетеді.
-  Яғни пайдаланушының тілі/тарихы уақыт өте келе жоғалуы мүмкін — бот
-  құламайды, бірақ жады тұрақты емес. Толық шешім — сыртқы қойма (Redis,
-  Vercel KV) қолдану, ол осы жобада әлі жоқ.
+  Шешімі — Redis: Vercel → Storage → **Upstash for Redis** → Connect Project
+  → Redeploy. Сонда `bot_store.py` әр студенттің `user_data`-сын Redis-те
+  шифрлап сақтайды (тіл, тарих, аккаунттар, ескерту баптаулары), ал
+  `/api/cron/reminders` ескертулерді жібереді (төмендегі «Ескертулер
+  Vercel-де»). Redis жоқ кезде бот бұрынғыдай жадымен жұмыс істейді.
 - **Webhook-ты бір рет қолмен тіркеу керек.** ASGI `lifespan` startup
   оқиғасы Vercel-де әр cold start сайын шақырыла бермейді, сондықтан
   автоматты тіркеуге сенбе:
@@ -316,7 +328,11 @@ Vercel — serverless: тұрақты процесс жоқ, әр сұраныс
 ### US2 — Расписание құру нұсқаулығы (QA: US3QATest)
 
 `/guide` командасы `knowledge/registration_guide.<lang>.md` файлын көрсетеді
-(кестелер, сілтемелер Telegram-да да, сайтта да дұрыс шығады).
+(кестелер, сілтемелер Telegram-да да, сайтта да дұрыс шығады). Қазір
+`registration_guide.kk.md` (қазақша), `registration_guide.ru.md` (орысша) және
+`registration_guide.md` (ағылшынша, түпнұсқа) бар; тілге сай файл болмаса,
+ағылшынша нұсқа көрсетіледі. Аудармалар AI білім қорына қосылмайды (AI
+сол фактілерді түпнұсқадан алады).
 
 - Файл жоқ болса — «Guide not available for this semester…», **басқа
   семестрдің нұсқаулығын көрсетпейді**.
@@ -559,12 +575,37 @@ before starting the polling worker; only one worker may consume updates.
 Alternatively, use the existing persistent FastAPI webhook mode. The Vercel
 website may remain deployed independently with `TELEGRAM_MODE=off`.
 
+### Ескертулер Vercel-де (reminders on Vercel)
+
 Vercel functions cannot keep the minute scheduler running, and their `/tmp`
-state does not survive reliably. Deploying this code to Vercel alone therefore
-**does not enable automatic delivery**. The compact settings card saves preferences;
-an immediate check can run inside a request, but future timed delivery still needs
-a persistent host. A button showing On is a preference, not proof of a running scheduler. Do not remove that guard or run
-an independent cron against ephemeral state: reminders could be missed or repeated.
+state does not survive. A cron against that ephemeral state could miss or
+repeat reminders, so on Vercel delivery needs durable state:
+
+1. **Redis.** Vercel → Storage → Create Database → Upstash for Redis → Connect
+   Project, then Redeploy. `KV_REST_API_URL`/`KV_REST_API_TOKEN` are set by the
+   integration (`BOT_STATE_REDIS_*`, `UPSTASH_REDIS_REST_*` and
+   `SDU_OAUTH_REDIS_*` are accepted too). `/api/health` then shows
+   `"bot_state": "redis"`.
+2. **The webhook** (`bot_store.synced`) loads the student's `user_data` from
+   Redis before each update and saves it after a change, Fernet-encrypted with
+   `WEB_SESSION_SECRET` (or a key derived from `TELEGRAM_BOT_TOKEN`). If Redis
+   cannot be read, the update runs from memory and nothing is written back.
+   Students with a reminder switched on are kept in a Redis set.
+3. **The check.** `.github/workflows/reminders.yml` POSTs
+   `/api/cron/reminders` every 5 minutes (GitHub may start it a few minutes
+   late; any other scheduler, e.g. cron-job.org every minute, works too).
+   `notifications.durable_tick` reads the subscribed records, works on copies,
+   and merges back only its own results for the same session. Every message is
+   first claimed with `SET NX` in Redis, so overlapping checks, the "enable"
+   click and other instances never send it twice; an undelivered message
+   releases its claim and is retried. A second call within 50 seconds does
+   nothing. With `CRON_SECRET` set (same value as the GitHub Actions secret)
+   only `Authorization: Bearer <CRON_SECRET>` is accepted. The answer holds
+   counts only.
+4. **Honest status.** Without Redis, or when no check has finished in the last
+   20 minutes, `/notify` adds "Automatic reminders are currently paused…", and
+   the assistant is told delivery is paused. A button showing On is a
+   preference, not proof of a running scheduler.
 
 
 ### Assistant service access

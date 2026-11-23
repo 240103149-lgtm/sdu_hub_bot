@@ -183,11 +183,15 @@ class TelegramToolbox:
             return self._private_only(lang)
         import notifications_bot
 
-        card, keyboard = notifications_bot.settings(self.context.user_data, lang)
+        paused = await notifications_bot.notifications.delivery_paused()
+        card, keyboard = notifications_bot.settings(self.context.user_data, lang, paused=paused)
         self.cards.append(Card(card, keyboard))
         return assistant.ToolResult({"deadline_reminders": notifications_bot.notifications.enabled(self.context.user_data, "deadline_notifications"),
-                                     "class_reminders": notifications_bot.notifications.enabled(self.context.user_data, "class_notifications")},
-                                    summary="[shown: reminder settings; use buttons to change]")
+                                     "class_reminders": notifications_bot.notifications.enabled(self.context.user_data, "class_notifications"),
+                                     # Never promise a reminder that nothing will send.
+                                     "delivery_paused": paused},
+                                    summary="[shown: reminder settings; use buttons to change"
+                                            + ("; automatic delivery is paused]" if paused else "]"))
 
     async def tool_get_my_grades(self, args: dict, lang: str) -> assistant.ToolResult:
         if not self.private:
@@ -538,9 +542,15 @@ async def answer_question(update: Update, context: ContextTypes.DEFAULT_TYPE, qu
     text = (question if question is not None else (update.effective_message.text or "")).strip()
     if not text:
         return
-    if question is None and login_guard.maybe_secret(context.user_data, text):
+    interrupted = question is None and login_guard.interrupted_signin(context.user_data, text)
+    if interrupted or (question is None and login_guard.maybe_secret(context.user_data, text)):
         # Right after a sign-in ended, a lone word with digits or symbols is most
         # likely the password typed again: it must not reach the model or the history.
+        # The same during a sign-in whose step was lost (a new server instance).
+        if interrupted:
+            from accounts_bot import clear_login
+
+            await clear_login(update, context)
         try:
             await update.effective_message.delete()
         except TelegramError as exc:

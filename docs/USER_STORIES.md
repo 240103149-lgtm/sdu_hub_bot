@@ -34,9 +34,9 @@ The settings card is intentionally short. It does not display hosting diagnostic
 
 ### Hosting boundary
 
-**Vercel serves the website and webhook requests but does not run a persistent scheduler.** `notifications.install()` deliberately skips Vercel. Its temporary filesystem also cannot reliably retain subscriptions between cold starts. To activate automatic reminders, move the bot to a persistent host with durable storage (or run polling continuously on a computer). The website can remain on Vercel.
+**Vercel serves the website and webhook requests but does not run a persistent scheduler.** `notifications.install()` deliberately skips Vercel, and its temporary filesystem cannot retain subscriptions between cold starts.
 
-Do not add a Vercel cron over ephemeral state and assume reminders work. A future serverless implementation needs a durable shared datastore, authenticated scheduled triggers and coordinated delivery.
+The serverless implementation (23.11.2026) therefore uses a durable shared datastore, a scheduled trigger and coordinated delivery: with Redis connected (Vercel → Storage → Upstash for Redis), `bot_store.py` keeps each student's encrypted `user_data` in Redis, `.github/workflows/reminders.yml` calls `/api/cron/reminders` every 5 minutes (optionally authenticated with `CRON_SECRET`), and every reminder is claimed in Redis (`SET NX`) before it is sent. Without Redis the endpoint answers "skipped" and `/notify` says delivery is paused. Details: README, "Ескертулер Vercel-де". A persistent host with `python bot.py` keeps working as before.
 
 ### Timetable validity
 
